@@ -45,14 +45,30 @@ a future version of the C++ standard library.
 to implement a hash table with one mutex per cache line
 (such as the `lock_sys_t::hash_table` in MariaDB Server 10.6).
 
-This has been tested with:
-* GCC 10.2.1 on GNU/Linux (using C++11 std::atomic and futex)
-* clang++-12 on GNU/Linux (using C++11 std::atomic and futex)
-* Microsoft Visual Studio 2019 (using C++20 std::atomic)
-Not tested (but expected to work) with:
-* GCC 11 (using C++20 std::atomic)
-* GCC 4.8.5 to GCC 10 (using C++11 std::atomic) on Linux or OpenBSD
-* clang++-4 to clang++-11 on Linux or OpenBSD
+The implementation with C++20 `std::atomic` is expected to work on:
+* (tested) Microsoft Visual Studio 2019
+* (not tested) GCC 11 on GNU/Linux
 
-June 6, 2021
+The implementation with C++11 `std::atomic` and `futex` is expected to work on:
+* (tested) GCC 10.2.1 on GNU/Linux
+* (tested) clang++-12, clang++-13 on GNU/Linux
+* (tested) Intel C++ Compiler based on clang++-12
+* (not tested) GCC 4.8.5 to GCC 10 on Linux or OpenBSD
+
+The following operating systems do not appear to define a `futex` system call:
+* FreeBSD (except in a Linux emulation mode)
+* NetBSD
+* IBM AIX
+* Apple macOS
+
+The C++20 `std::atomic::wait()` and `std::atomic::notify_one()` would
+seem to deliver a portable `futex` interface. Unfortunately, it does
+not appear to be available yet on any system that lacks the system calls.
+For example, Apple XCode based on clang++-12 explicitly declares
+`std::atomic::wait()` and `std::atomic::notify_one()` unavailable via
+```c++
+#define _LIBCPP_AVAILABILITY_SYNC __attribute__((unavailable))
+```
+
+August 17, 2021
 Marko Mäkelä
