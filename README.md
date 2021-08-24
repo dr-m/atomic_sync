@@ -57,8 +57,12 @@ It has been tested with:
 * clang++-12, clang++-13 on GNU/Linux when libstdc++-11-dev is not available
 * Intel C++ Compiler based on clang++-12
 
+The following operating systems seem to define something similar to a `futex`
+system call, but we have not implemented it yet:
+* FreeBSD: `_umtx_op()` (`UMTX_OP_WAIT_UINT_PRIVATE`, `UMTX_OP_WAKE_PRIVATE`)
+* DragonflyBSD: `umtx_sleep()`, `umtx_wakeup()`
+
 The following operating systems do not appear to define a `futex` system call:
-* FreeBSD (except in a Linux emulation mode)
 * NetBSD
 * IBM AIX
 * Apple macOS
@@ -72,5 +76,5 @@ For example, Apple XCode based on clang++-12 explicitly declares
 #define _LIBCPP_AVAILABILITY_SYNC __attribute__((unavailable))
 ```
 
-August 18, 2021
+August 24, 2021
 Marko Mäkelä
