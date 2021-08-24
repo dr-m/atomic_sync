@@ -41,15 +41,15 @@ public:
   bool trylock() noexcept
   {
     uint32_t lk = 0;
-    return compare_exchange_strong(lk, HOLDER, std::memory_order_acquire,
+    return compare_exchange_strong(lk, HOLDER + 1, std::memory_order_acquire,
                                    std::memory_order_relaxed);
   }
 
   void lock() noexcept { if (!trylock()) wait_and_lock(); }
   void unlock() noexcept
   {
-    const uint32_t lk = fetch_and(~HOLDER, std::memory_order_release);
-    if (lk != HOLDER)
+    const uint32_t lk = fetch_sub(HOLDER + 1, std::memory_order_release);
+    if (lk != HOLDER + 1)
     {
       assert(lk & HOLDER);
       notify_one();

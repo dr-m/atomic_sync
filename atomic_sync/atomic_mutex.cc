@@ -35,15 +35,10 @@ void atomic_mutex::wait_and_lock() noexcept
   /* We hope to avoid system calls when the conflict is resolved quickly. */
   for (auto spin = spin_rounds; spin; spin--)
   {
-    lk &= ~HOLDER;
-    assert(lk);
-    while (!compare_exchange_weak(lk, HOLDER | (lk - 1),
-                                  std::memory_order_acquire,
-                                  std::memory_order_relaxed))
-      if (lk & HOLDER)
-        goto occupied;
-    return;
-occupied:
+    assert(~HOLDER & lk);
+    lk = fetch_or(HOLDER, std::memory_order_relaxed);
+    if (!(lk & HOLDER))
+      goto acquired;
 # ifdef _WIN32
     YieldProcessor();
 # elif defined(_ARCH_PWR8)
@@ -52,20 +47,18 @@ occupied:
     __asm__ __volatile__ ("pause");
 # endif
   }
-  lk = load(std::memory_order_relaxed);
 #endif
   for (;;)
   {
-    while (!(lk & HOLDER))
+    lk = fetch_or(HOLDER, std::memory_order_relaxed);
+    if (!(lk & HOLDER))
     {
+    acquired:
       assert(lk);
-      if (compare_exchange_weak(lk, HOLDER | (lk - 1),
-                                std::memory_order_acquire,
-                                std::memory_order_relaxed))
-        return;
+      std::atomic_thread_fence(std::memory_order_acquire);
+      return;
     }
     assert(lk > HOLDER);
     wait(lk);
-    lk = load(std::memory_order_relaxed);
   }
 }
