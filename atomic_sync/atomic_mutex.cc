@@ -1,12 +1,5 @@
 #include "atomic_mutex.h"
 
-#ifdef SPINLOOP
-unsigned atomic_mutex::spin_rounds;
-# ifdef _WIN32
-#  include <windows.h>
-# endif
-#endif
-
 #ifdef _WIN32
 #elif __cplusplus >= 202002L
 #else /* Emulate the C++20 primitives */
@@ -31,7 +24,35 @@ inline void atomic_mutex::wait(uint32_t old) const noexcept {FUTEX(WAIT, old);}
 void atomic_mutex::wait_and_lock() noexcept
 {
   uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);
+  for (;; wait(lk))
+  {
+    if (lk & HOLDER)
+    {
+      lk = load(std::memory_order_relaxed);
+      if (lk & HOLDER)
+        continue;
+    }
+    lk = fetch_or(HOLDER, std::memory_order_relaxed);
+    if (!(lk & HOLDER))
+    {
+    acquired:
+      assert(lk);
+      std::atomic_thread_fence(std::memory_order_acquire);
+      return;
+    }
+    assert(lk > HOLDER);
+  }
+}
+
 #ifdef SPINLOOP
+unsigned atomic_spin_mutex::spin_rounds;
+# ifdef _WIN32
+#  include <windows.h>
+# endif
+
+void atomic_spin_mutex::wait_and_lock() noexcept
+{
+  uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);
   /* We hope to avoid system calls when the conflict is resolved quickly. */
   for (auto spin = spin_rounds; spin; spin--)
   {
@@ -52,7 +73,6 @@ void atomic_mutex::wait_and_lock() noexcept
     __asm__ __volatile__ ("pause");
 # endif
   }
-#endif
   for (;; wait(lk))
   {
     if (lk & HOLDER)
@@ -72,3 +92,4 @@ void atomic_mutex::wait_and_lock() noexcept
     assert(lk > HOLDER);
   }
 }
+#endif

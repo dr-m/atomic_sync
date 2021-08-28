@@ -4,10 +4,22 @@
 
 /** Tiny, non-recursive mutex that keeps a count of waiters.
 
-We count pending lock() requests, so that unlock() will only invoke
-notify_one() when pending requests exist. */
+The interface intentionally resembles std::mutex.
+We do not define native_handle().
+
+We define the predicates is_locked_or_waiting() and is_locked().
+
+There is no explicit constructor or destructor.
+The object is expected to be zero-initialized, so that
+!is_locked_or_waiting() will hold.
+
+The implementation counts pending lock() requests, so that unlock()
+will only invoke notify_one() when pending requests exist. */
 class atomic_mutex : std::atomic<uint32_t>
 {
+#ifdef SPINLOOP
+  friend class atomic_spin_mutex;
+#endif
 #ifdef _WIN32
 #elif __cplusplus >= 202002L
 #else /* Emulate the C++20 primitives */
@@ -19,23 +31,12 @@ class atomic_mutex : std::atomic<uint32_t>
   /** Wait until the mutex has been acquired */
   void wait_and_lock() noexcept;
 public:
-#ifdef SPINLOOP
-# ifdef _MSC_VER
-  __declspec(dllexport)
-# endif
-  /** number of spin loops in wait_and_lock() */
-  static unsigned spin_rounds;
-#endif
-
   /** @return whether the mutex is being held or waited for */
   bool is_locked_or_waiting() const
   { return load(std::memory_order_relaxed) != 0; }
   /** @return whether the mutex is being held by any thread */
   bool is_locked() const
   { return (load(std::memory_order_relaxed) & HOLDER) != 0; }
-
-  void init() { assert(!is_locked_or_waiting()); }
-  void destroy() { assert(!is_locked_or_waiting()); }
 
   /** @return whether the mutex was acquired */
   bool trylock() noexcept
@@ -56,3 +57,21 @@ public:
     }
   }
 };
+
+#ifdef SPINLOOP
+/** Like atomic_mutex, but with a spinloop in lock() */
+class atomic_spin_mutex : public atomic_mutex
+{
+  /** Wait until the mutex has been acquired */
+  void wait_and_lock() noexcept;
+
+public:
+# ifdef _MSC_VER
+  __declspec(dllexport)
+# endif
+  /** number of spin loops in wait_and_lock() */
+  static unsigned spin_rounds;
+};
+#else
+typedef atomic_mutex atomic_spin_mutex;
+#endif

@@ -1,4 +1,4 @@
-#include "atomic_sux_lock.h"
+#include "atomic_shared_mutex.h"
 #include <thread>
 
 #ifdef _WIN32
@@ -18,12 +18,21 @@
 # else
 #  error "no C++20 nor futex support"
 # endif
-void atomic_sux_lock::notify_one() noexcept { FUTEX(WAKE, 1); }
-inline void atomic_sux_lock::wait(uint32_t old) const noexcept
+void atomic_shared_mutex_impl<atomic_mutex>::notify_one() noexcept
+{ FUTEX(WAKE, 1); }
+inline void atomic_mutex_impl<atomic_mutex>::wait(uint32_t old) const noexcept
 { FUTEX(WAIT, old); }
+# ifdef SPINLOOP
+void atomic_shared_mutex_impl<atomic_spin_mutex>::notify_one() noexcept
+{ FUTEX(WAKE, 1); }
+inline void atomic_mutex_impl<atomic_spin_mutex>::wait(uint32_t old)
+const noexcept
+{ FUTEX(WAIT, old); }
+# endif
 #endif
 
-void atomic_sux_lock::x_wait(uint32_t lk) noexcept
+template<typename mutex>
+void atomic_shared_mutex_impl<mutex>::lock_wait(uint32_t lk) noexcept
 {
   assert(ex.is_locked());
   assert(lk);
@@ -38,7 +47,8 @@ void atomic_sux_lock::x_wait(uint32_t lk) noexcept
   while (lk != X);
 }
 
-void atomic_sux_lock::s_wait() noexcept
+template<typename mutex>
+void atomic_shared_mutex_impl<mutex>::shared_lock_wait() noexcept
 {
   for (;;)
   {
@@ -57,3 +67,14 @@ void atomic_sux_lock::s_wait() noexcept
   }
   ex.unlock();
 }
+
+template
+void atomic_shared_mutex_impl<atomic_mutex>::lock_wait(uint32_t) noexcept;
+template
+void atomic_shared_mutex_impl<atomic_mutex>::shared_lock_wait() noexcept;
+#ifdef SPINLOOP
+template
+void atomic_shared_mutex_impl<atomic_spin_mutex>::lock_wait(uint32_t) noexcept;
+template
+void atomic_shared_mutex_impl<atomic_spin_mutex>::shared_lock_wait() noexcept;
+#endif

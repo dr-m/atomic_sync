@@ -11,12 +11,13 @@ In environments where the `futex` system call is available,
 implemented by `futex`. Examples for Linux and OpenBSD are included.
 
 This project defines the following synchronization primitives:
-* `atomic_mutex`: A non-recursive mutex that in only 4 bytes.
-* `atomic_sux_lock`: A non-recursive rw-lock or (shared,update,exclusive) lock
-in 4+4 bytes.
-* `atomic_recursive_sux_lock`: A variant of `atomic_sux_lock` that supports
-re-entrant acquisition of U or X locks as well as the transfer of lock
-ownership.
+* `atomic_mutex`: A non-recursive mutex in 4 bytes that supports the
+transfer of lock ownership (`lock()` and `unlock()` in different threads)
+* `atomic_shared_mutex`: A non-recursive rw-lock or
+(shared,update,exclusive) lock in 4+4 bytes that supports the transfer
+of lock ownership.
+* `atomic_recursive_shared_mutex`: A variant of `atomic_shared_mutex`
+that supports re-entrant acquisition of U or X locks.
 
 You can try it out as follows:
 ```sh
@@ -29,11 +30,16 @@ test/Debug/test_atomic_sync # Microsoft Windows
 ```
 The output of the test program should be like this:
 ```
-atomic_mutex, atomic_sux_lock, atomic_recursive_sux_lock.
+atomic_spin_mutex, atomic_spin_shared_lock, atomic_spin_recursive_shared_lock.
 ```
 Note: `-DSPINLOOP` enables the use of a spin loop. If conflicts are
 not expected to be resolved quickly, it is advisable to not use spinloops and
 instead let threads immediately proceed to `wait()` inside a system call.
+When compiled without that compile-time option, the output of the test program
+should be like this:
+```
+atomic_mutex, atomic_shared_lock, atomic_recursive_shared_lock.
+```
 
 This is based on my implementation of InnoDB rw-locks in
 [MariaDB Server](https://github.com/MariaDB/server/) 10.6.
@@ -61,11 +67,11 @@ The following operating systems seem to define something similar to a `futex`
 system call, but we have not implemented it yet:
 * FreeBSD: `_umtx_op()` (`UMTX_OP_WAIT_UINT_PRIVATE`, `UMTX_OP_WAKE_PRIVATE`)
 * DragonflyBSD: `umtx_sleep()`, `umtx_wakeup()`
+* Apple maxOS: `__ulock_wait()`, `__ulock_wake()`
 
 The following operating systems do not appear to define a `futex` system call:
 * NetBSD
 * IBM AIX
-* Apple macOS
 
 The C++20 `std::atomic::wait()` and `std::atomic::notify_one()` would
 seem to deliver a portable `futex` interface. Unfortunately, it does
@@ -76,5 +82,5 @@ For example, Apple XCode based on clang++-12 explicitly declares
 #define _LIBCPP_AVAILABILITY_SYNC __attribute__((unavailable))
 ```
 
-August 24, 2021
+August 28, 2021
 Marko Mäkelä
