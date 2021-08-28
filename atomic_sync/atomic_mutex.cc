@@ -36,9 +36,14 @@ void atomic_mutex::wait_and_lock() noexcept
   for (auto spin = spin_rounds; spin; spin--)
   {
     assert(~HOLDER & lk);
-    lk = fetch_or(HOLDER, std::memory_order_relaxed);
-    if (!(lk & HOLDER))
-      goto acquired;
+    if (lk & HOLDER)
+      lk = load(std::memory_order_relaxed);
+    else
+    {
+      lk = fetch_or(HOLDER, std::memory_order_relaxed);
+      if (!(lk & HOLDER))
+        goto acquired;
+    }
 # ifdef _WIN32
     YieldProcessor();
 # elif defined(_ARCH_PWR8)
@@ -48,8 +53,14 @@ void atomic_mutex::wait_and_lock() noexcept
 # endif
   }
 #endif
-  for (;;)
+  for (;; wait(lk))
   {
+    if (lk & HOLDER)
+    {
+      lk = load(std::memory_order_relaxed);
+      if (lk & HOLDER)
+        continue;
+    }
     lk = fetch_or(HOLDER, std::memory_order_relaxed);
     if (!(lk & HOLDER))
     {
@@ -59,6 +70,5 @@ void atomic_mutex::wait_and_lock() noexcept
       return;
     }
     assert(lk > HOLDER);
-    wait(lk);
   }
 }
