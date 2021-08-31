@@ -23,7 +23,7 @@ You can try it out as follows:
 ```sh
 mkdir build
 cd build
-cmake -DCMAKE_CXX_FLAGS=-DSPINLOOP ..
+cmake -DCMAKE_CXX_FLAGS=-DSPINLOOP=200 ..
 cmake --build .
 test/test_atomic_sync
 test/Debug/test_atomic_sync # Microsoft Windows
@@ -82,5 +82,34 @@ For example, Apple XCode based on clang++-12 explicitly declares
 #define _LIBCPP_AVAILABILITY_SYNC __attribute__((unavailable))
 ```
 
-August 28, 2021
+### NUMA notes
+
+I have tested the `atomic_mutex::wait_and_lock()` implementation on a
+dual Intel Xeon E5-2630 v4 (2×10 threads each) as follows:
+```sh
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS=-DSPINLOOP=200 ..
+cmake --build
+test/test_atomic_sync
+time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
+```
+The `numactl` command would bind the process to one NUMA node (CPU package)
+in order to avoid shipping cache lines between NUMA nodes.
+The smallest difference between plain and `numactl` that I achieved was
+with `-DSPINLOOP=200`:
+| invocation | real   | user    | system  |
+| ---------- | -----: | ------: | ------: |
+| plain      | 2.259s | 46.372s |  8.283s |
+| `numactl`  | 1.748s | 22.765s |  6.085s |
+
+The execution times for the plain run vary a lot; a much longer
+benchmark run would be advisable.
+
+On the Intel Skylake microarchitecture, the `PAUSE` instruction
+latency was made about 10× it was on Haskell. Later microarchitectures
+reduced the latency again. That latency may affect the optimal
+spinloop count, but it is only one of many factors.
+
+August 31, 2021
 Marko Mäkelä

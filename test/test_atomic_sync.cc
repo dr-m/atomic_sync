@@ -104,7 +104,6 @@ int main(int, char **)
   std::thread t[N_THREADS];
 
 #ifdef SPINLOOP
-  atomic_spin_mutex::spin_rounds = 10;
   fputs("atomic_spin_mutex", stderr);
 #else
   fputs("atomic_mutex", stderr);

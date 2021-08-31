@@ -45,7 +45,9 @@ void atomic_mutex::wait_and_lock() noexcept
 }
 
 #ifdef SPINLOOP
-unsigned atomic_spin_mutex::spin_rounds;
+/** The count of 100 seems to yield the best NUMA performance on
+Intel Xeon E5-2630 v4 (Haswell microarchitecture) */
+unsigned atomic_spin_mutex::spin_rounds = SPINLOOP;
 # ifdef _WIN32
 #  include <windows.h>
 # endif
@@ -53,8 +55,9 @@ unsigned atomic_spin_mutex::spin_rounds;
 void atomic_spin_mutex::wait_and_lock() noexcept
 {
   uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);
+
   /* We hope to avoid system calls when the conflict is resolved quickly. */
-  for (auto spin = spin_rounds; spin; spin--)
+  for (auto spin = spin_rounds;;)
   {
     assert(~HOLDER & lk);
     if (lk & HOLDER)
@@ -72,7 +75,10 @@ void atomic_spin_mutex::wait_and_lock() noexcept
 # elif defined __GNUC__ && defined __i386__ || defined __x86_64__
     __asm__ __volatile__ ("pause");
 # endif
+    if (!--spin)
+      break;
   }
+
   for (;; wait(lk))
   {
     if (lk & HOLDER)
