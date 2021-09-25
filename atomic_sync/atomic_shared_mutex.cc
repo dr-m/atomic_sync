@@ -18,16 +18,17 @@
 # else
 #  error "no C++20 nor futex support"
 # endif
-void atomic_shared_mutex_impl<atomic_mutex>::notify_one() noexcept
+template<typename mutex>
+void atomic_shared_mutex_impl<mutex>::notify_one() noexcept
 { FUTEX(WAKE, 1); }
-inline void atomic_mutex_impl<atomic_mutex>::wait(uint32_t old) const noexcept
+template<typename mutex>
+inline void atomic_shared_mutex_impl<mutex>::wait(uint32_t old) const noexcept
 { FUTEX(WAIT, old); }
+template
+void atomic_shared_mutex_impl<atomic_mutex>::notify_one() noexcept;
 # ifdef SPINLOOP
-void atomic_shared_mutex_impl<atomic_spin_mutex>::notify_one() noexcept
-{ FUTEX(WAKE, 1); }
-inline void atomic_mutex_impl<atomic_spin_mutex>::wait(uint32_t old)
-const noexcept
-{ FUTEX(WAIT, old); }
+template
+void atomic_shared_mutex_impl<atomic_spin_mutex>::notify_one() noexcept;
 # endif
 #endif
 
