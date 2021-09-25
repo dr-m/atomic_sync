@@ -49,11 +49,11 @@ class atomic_recursive_shared_mutex_impl : a_shared_mutex
   std::atomic<std::thread::id> writer{};
 
   /** The multiplier in recursive for X locks */
-  static constexpr uint32_t RECURSIVE_X= 1U;
+  static constexpr uint32_t RECURSIVE_X = 1U;
   /** The multiplier in recursive for U locks */
-  static constexpr uint32_t RECURSIVE_U= 1U << 16;
+  static constexpr uint32_t RECURSIVE_U = 1U << 16;
   /** The maximum allowed level of recursion */
-  static constexpr uint32_t RECURSIVE_MAX= RECURSIVE_U - 1;
+  static constexpr uint32_t RECURSIVE_MAX = RECURSIVE_U - 1;
 
   /** Acquire a recursive lock.
       @tparam U true=update lock, false=exclusive lock */
@@ -84,9 +84,9 @@ class atomic_recursive_shared_mutex_impl : a_shared_mutex
     {
       set_holder(std::thread::id{});
       if (U)
-	a_shared_mutex::unlock_update();
+        a_shared_mutex::unlock_update();
       else
-	a_shared_mutex::unlock();
+        a_shared_mutex::unlock();
     }
   }
 
