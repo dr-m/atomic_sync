@@ -67,7 +67,7 @@ The following operating systems seem to define something similar to a `futex`
 system call, but we have not implemented it yet:
 * FreeBSD: `_umtx_op()` (`UMTX_OP_WAIT_UINT_PRIVATE`, `UMTX_OP_WAKE_PRIVATE`)
 * DragonflyBSD: `umtx_sleep()`, `umtx_wakeup()`
-* Apple maxOS: `__ulock_wait()`, `__ulock_wake()`
+* Apple macOS: `__ulock_wait()`, `__ulock_wake()` (undocumented)
 
 The following operating systems do not appear to define a `futex` system call:
 * NetBSD
@@ -85,31 +85,34 @@ For example, Apple XCode based on clang++-12 explicitly declares
 ### NUMA notes
 
 I have tested the `atomic_mutex::wait_and_lock()` implementation on a
-dual Intel Xeon E5-2630 v4 (2×10 threads each) as follows:
+dual Intel Xeon E5-2630 v4 (2×10 threads each, Haswell microarchitecture)
+as follows:
 ```sh
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS=-DSPINLOOP=200 ..
-cmake --build
-test/test_atomic_sync
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS=-DSPINLOOP=125 ..
+cmake --build .
+time test/test_atomic_sync
 time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
 ```
 The `numactl` command would bind the process to one NUMA node (CPU package)
 in order to avoid shipping cache lines between NUMA nodes.
 The smallest difference between plain and `numactl` that I achieved was
-with `-DSPINLOOP=200`:
+with `-DSPINLOOP=125`. For more stable times, I temporarily changed the
+value of `N_ROUNDS` to 500 in the source code. The durations below are
+the fastest of several attempts with `N_ROUNDS = 100`.
 | invocation | real   | user    | system  |
 | ---------- | -----: | ------: | ------: |
-| plain      | 2.259s | 46.372s |  8.283s |
-| `numactl`  | 1.748s | 22.765s |  6.085s |
+| plain      | 2.308s | 49.186s |  7.630s |
+| `numactl`  | 1.542s | 21.393s |  5.280s |
 
-The execution times for the plain run vary a lot; a much longer
-benchmark run would be advisable.
+The execution times for the plain run vary a lot; a much longer run
+(with a larger value of `N_ROUNDS`) is advisable for performance tests.
 
 On the Intel Skylake microarchitecture, the `PAUSE` instruction
-latency was made about 10× it was on Haskell. Later microarchitectures
+latency was made about 10× it was on Haswell. Later microarchitectures
 reduced the latency again. That latency may affect the optimal
 spinloop count, but it is only one of many factors.
 
-August 31, 2021
+September 25, 2021
 Marko Mäkelä
