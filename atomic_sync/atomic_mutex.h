@@ -39,17 +39,18 @@ public:
   { return (load(std::memory_order_relaxed) & HOLDER) != 0; }
 
   /** @return whether the mutex was acquired */
-  bool trylock() noexcept
+  bool trylock(std::memory_order order = std::memory_order_acquire) noexcept
   {
     uint32_t lk = 0;
-    return compare_exchange_strong(lk, HOLDER + 1, std::memory_order_acquire,
+    return compare_exchange_strong(lk, HOLDER + 1, order,
                                    std::memory_order_relaxed);
   }
 
-  void lock() noexcept { if (!trylock()) wait_and_lock(); }
-  void unlock() noexcept
+  void lock(std::memory_order order = std::memory_order_acquire) noexcept
+  { if (!trylock(order)) wait_and_lock(); }
+  void unlock(std::memory_order order = std::memory_order_release) noexcept
   {
-    const uint32_t lk = fetch_sub(HOLDER + 1, std::memory_order_release);
+    const uint32_t lk = fetch_sub(HOLDER + 1, order);
     if (lk != HOLDER + 1)
     {
       assert(lk & HOLDER);

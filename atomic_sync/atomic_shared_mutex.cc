@@ -52,20 +52,20 @@ void atomic_shared_mutex_impl<mutex>::shared_lock_wait() noexcept
 {
   for (;;)
   {
-    ex.lock();
+    ex.lock(std::memory_order_relaxed);
     uint32_t lk = fetch_add(1, std::memory_order_acquire);
     if (lk == X)
     {
       fetch_sub(1, std::memory_order_relaxed);
       notify_one();
-      ex.unlock();
+      ex.unlock(std::memory_order_relaxed);
       std::this_thread::yield();
       continue;
     }
     assert(!(lk & X));
     break;
   }
-  ex.unlock();
+  ex.unlock(std::memory_order_relaxed);
 }
 
 template

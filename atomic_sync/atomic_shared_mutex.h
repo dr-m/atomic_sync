@@ -82,12 +82,12 @@ public:
 
   /** Try to acquire a shared lock.
   @return whether the S lock was acquired */
-  bool try_lock_shared() noexcept
+  bool try_lock_shared(std::memory_order order =
+                       std::memory_order_acquire) noexcept
   {
     uint32_t lk = 0;
     while (!compare_exchange_weak(lk, lk + 1,
-                                  std::memory_order_acquire,
-                                  std::memory_order_relaxed))
+                                  order, std::memory_order_relaxed))
       if (lk & X)
         return false;
     return true;
@@ -95,94 +95,101 @@ public:
 
   /** Try to acquire an Update lock (which conflicts with other U or X lock).
   @return whether the U lock was acquired */
-  bool try_lock_update() noexcept
+  bool try_lock_update(std::memory_order order =
+                       std::memory_order_acquire) noexcept
   {
-    if (!ex.trylock())
+    if (!ex.trylock(std::memory_order_relaxed))
       return false;
 #ifndef NDEBUG
     uint32_t lk =
 #endif
-    fetch_add(1, std::memory_order_acquire);
+    fetch_add(1, order);
     assert(lk < X - 1);
     return true;
   }
 
   /** Try to acquire an exclusive lock.
   @return whether the X lock was acquired */
-  bool try_lock() noexcept
+  bool try_lock(std::memory_order order = std::memory_order_acquire) noexcept
   {
-    if (!ex.trylock())
+    if (!ex.trylock(std::memory_order_relaxed))
       return false;
     uint32_t lk = 0;
-    if (compare_exchange_strong(lk, X, std::memory_order_acquire,
-                                std::memory_order_relaxed))
+    if (compare_exchange_strong(lk, X, order, std::memory_order_relaxed))
       return true;
-    ex.unlock();
+    ex.unlock(std::memory_order_relaxed);
     return false;
   }
 
   /** Acquire a shared lock (which can coexist with S or U locks). */
-  void lock_shared() noexcept { if (!try_lock_shared()) shared_lock_wait(); }
+  void lock_shared(std::memory_order order =
+                   std::memory_order_acquire) noexcept
+  { if (!try_lock_shared(order)) shared_lock_wait(); }
   /** Acquire an update lock (which can coexist with S locks). */
-  void lock_update() noexcept
+  void lock_update(std::memory_order order =
+                   std::memory_order_acquire) noexcept
   {
-    ex.lock();
+    ex.lock(std::memory_order_relaxed);
 #ifndef NDEBUG
     uint32_t lk =
 #endif
-    fetch_add(1, std::memory_order_acquire);
+    fetch_add(1, order);
     assert(lk < X - 1);
   }
   /** Acquire an exclusive lock. */
-  void lock() noexcept
+  void lock(std::memory_order order = std::memory_order_acquire) noexcept
   {
-    ex.lock();
-    if (uint32_t lk = fetch_or(X, std::memory_order_acquire))
+    ex.lock(std::memory_order_relaxed);
+    if (uint32_t lk = fetch_or(X, order))
       lock_wait(lk);
   }
 
   /** Upgrade an update lock to exclusive. */
-  void update_lock_upgrade() noexcept
+  void update_lock_upgrade(std::memory_order order =
+                           std::memory_order_acquire) noexcept
   {
     assert(ex.is_locked());
-    uint32_t lk = fetch_add(X - 1, std::memory_order_acquire);
+    uint32_t lk = fetch_add(X - 1, order);
     if (lk != 1)
       lock_wait(lk - 1);
   }
   /** Downgrade an exclusive lock to update. */
-  void lock_update_downgrade() noexcept
+  void lock_update_downgrade(std::memory_order order =
+                             std::memory_order_release) noexcept
   {
     assert(ex.is_locked());
     assert(is_locked());
-    store(1, std::memory_order_release);
+    store(1, order);
     /* Note: Any pending s_lock() will not be woken up until u_unlock() */
   }
 
   /** Release a shared lock. */
-  void unlock_shared() noexcept
+  void unlock_shared(std::memory_order order =
+                     std::memory_order_release) noexcept
   {
-    uint32_t lk = fetch_sub(1, std::memory_order_release);
+    uint32_t lk = fetch_sub(1, order);
     assert(~X & lk);
     if (lk == X + 1)
       notify_one();
   }
   /** Release an update lock. */
-  void unlock_update() noexcept
+  void unlock_update(std::memory_order order =
+                     std::memory_order_release) noexcept
   {
 #ifndef NDEBUG
     uint32_t lk =
 #endif
-    fetch_sub(1, std::memory_order_release);
+      fetch_sub(1, std::memory_order_relaxed);
     assert(lk);
     assert(lk < X);
-    ex.unlock();
+    ex.unlock(order);
   }
   /** Release an exclusive lock. */
-  void unlock() noexcept
+  void unlock(std::memory_order order = std::memory_order_release) noexcept
   {
     assert(is_locked());
-    store(0, std::memory_order_release);
-    ex.unlock();
+    store(0, std::memory_order_relaxed);
+    ex.unlock(order);
   }
 };
 
