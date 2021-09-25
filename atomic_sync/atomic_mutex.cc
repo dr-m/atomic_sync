@@ -23,24 +23,19 @@ inline void atomic_mutex::wait(uint32_t old) const noexcept {FUTEX(WAIT, old);}
 
 void atomic_mutex::wait_and_lock() noexcept
 {
-  uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);
-  for (;; wait(lk))
+  for (uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);;)
   {
     if (lk & HOLDER)
-    {
       lk = load(std::memory_order_relaxed);
-      if (lk & HOLDER)
-        continue;
-    }
-    lk = fetch_or(HOLDER, std::memory_order_relaxed);
-    if (!(lk & HOLDER))
+    else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
+                                   std::memory_order_relaxed))
     {
-    acquired:
       assert(lk);
-      std::atomic_thread_fence(std::memory_order_acquire);
       return;
     }
-    assert(lk > HOLDER);
+
+    if (lk & HOLDER)
+      wait(lk);
   }
 }
 
@@ -62,12 +57,9 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     assert(~HOLDER & lk);
     if (lk & HOLDER)
       lk = load(std::memory_order_relaxed);
-    else
-    {
-      lk = fetch_or(HOLDER, std::memory_order_relaxed);
-      if (!(lk & HOLDER))
-        goto acquired;
-    }
+    else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
+                                   std::memory_order_relaxed))
+      return;
 # ifdef _WIN32
     YieldProcessor();
 # elif defined(_ARCH_PWR8)
@@ -79,23 +71,17 @@ void atomic_spin_mutex::wait_and_lock() noexcept
       break;
   }
 
-  for (;; wait(lk))
+  for (;;)
   {
+    assert(~HOLDER & lk);
     if (lk & HOLDER)
     {
+      wait(lk);
       lk = load(std::memory_order_relaxed);
-      if (lk & HOLDER)
-        continue;
     }
-    lk = fetch_or(HOLDER, std::memory_order_relaxed);
-    if (!(lk & HOLDER))
-    {
-    acquired:
-      assert(lk);
-      std::atomic_thread_fence(std::memory_order_acquire);
-      return;
-    }
-    assert(lk > HOLDER);
+    else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
+				   std::memory_order_relaxed))
+      break;
   }
 }
 #endif
