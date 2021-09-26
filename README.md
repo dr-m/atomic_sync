@@ -23,7 +23,7 @@ You can try it out as follows:
 ```sh
 mkdir build
 cd build
-cmake -DCMAKE_CXX_FLAGS=-DSPINLOOP=200 ..
+cmake -DCMAKE_CXX_FLAGS=-DSPINLOOP=125 ..
 cmake --build .
 test/test_atomic_sync
 test/Debug/test_atomic_sync # Microsoft Windows
@@ -100,13 +100,15 @@ in order to avoid shipping cache lines between NUMA nodes.
 The smallest difference between plain and `numactl` that I achieved was
 with `-DSPINLOOP=125`. For more stable times, I temporarily changed the
 value of `N_ROUNDS` to 500 in the source code. The durations below are
-the fastest of several attempts with `N_ROUNDS = 100`.
-| invocation | real   | user    | system  |
-| ---------- | -----: | ------: | ------: |
-| plain      | 2.308s | 49.186s |  7.630s |
-| `numactl`  | 1.542s | 21.393s |  5.280s |
+the fastest of several attempts with GCC 11.2.0 and `N_ROUNDS = 100`.
+| invocation                  | real   | user    | system  |
+| ----------                  | -----: | ------: | ------: |
+| plain                       | 2.369s | 49.495s |  8.493s |
+| `numactl`                   | 1.459s | 20.874s |  5.296s |
+| `-DSPINLOOP=125`            | 2.312s | 48.785s |  7.560s |
+| `-DSPINLOOP=125`,`numactl`  | 1.472s | 21.244s |  5.068s |
 
-The execution times for the plain run vary a lot; a much longer run
+The execution times without `numactl` vary a lot; a much longer run
 (with a larger value of `N_ROUNDS`) is advisable for performance tests.
 
 On the Intel Skylake microarchitecture, the `PAUSE` instruction
@@ -114,5 +116,5 @@ latency was made about 10× it was on Haswell. Later microarchitectures
 reduced the latency again. That latency may affect the optimal
 spinloop count, but it is only one of many factors.
 
-September 25, 2021
+September 26, 2021
 Marko Mäkelä

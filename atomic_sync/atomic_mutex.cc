@@ -26,21 +26,21 @@ void atomic_mutex::wait_and_lock() noexcept
   for (uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);;)
   {
     if (lk & HOLDER)
+    {
+      wait(lk);
       lk = load(std::memory_order_relaxed);
+    }
     else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
                                    std::memory_order_relaxed))
     {
       assert(lk);
       return;
     }
-
-    if (lk & HOLDER)
-      wait(lk);
   }
 }
 
 #ifdef SPINLOOP
-/** The count of 100 seems to yield the best NUMA performance on
+/** The count of 125 seems to yield the best NUMA performance on
 Intel Xeon E5-2630 v4 (Haswell microarchitecture) */
 unsigned atomic_spin_mutex::spin_rounds = SPINLOOP;
 # ifdef _WIN32
@@ -60,13 +60,16 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
                                    std::memory_order_relaxed))
       return;
+    else
+    {
 # ifdef _WIN32
-    YieldProcessor();
+      YieldProcessor();
 # elif defined(_ARCH_PWR8)
-    __ppc_get_timebase();
+      __ppc_get_timebase();
 # elif defined __GNUC__ && defined __i386__ || defined __x86_64__
-    __asm__ __volatile__ ("pause");
+      __asm__ __volatile__ ("pause");
 # endif
+    }
     if (!--spin)
       break;
   }
