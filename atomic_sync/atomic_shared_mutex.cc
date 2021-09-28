@@ -53,9 +53,9 @@ void atomic_shared_mutex_impl<mutex>::shared_lock_wait() noexcept
 {
   for (;;)
   {
-    ex.lock(std::memory_order_relaxed);
+    ex.lock();
     bool acquired= try_lock_shared();
-    ex.unlock(std::memory_order_relaxed);
+    ex.unlock();
     if (acquired)
       break;
     std::this_thread::yield();
