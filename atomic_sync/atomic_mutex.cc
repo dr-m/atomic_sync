@@ -23,14 +23,26 @@ inline void atomic_mutex::wait(uint32_t old) const noexcept {FUTEX(WAIT, old);}
 
 void atomic_mutex::wait_and_lock() noexcept
 {
-  for (uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);;)
+  for (uint32_t lk = PENDING + fetch_add(PENDING, std::memory_order_relaxed);;)
   {
     if (lk & HOLDER)
     {
+#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+    do_wait:
+      lk |= HOLDER;
+#endif
       wait(lk);
       lk = load(std::memory_order_relaxed);
     }
-#if defined _WIN32 || defined __i386__ || defined __x86_64__
+#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+    else
+    {
+      static_assert(HOLDER == (1U << 0), "compatibility");
+      __asm__ goto("lock btsq $0, %0\n\t"
+                   "jc %l1" : : "m" (*this) : "cc", "memory" : do_wait);
+      return;
+    }
+#elif defined _WIN32
     else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
                                    std::memory_order_relaxed))
     {
@@ -60,7 +72,7 @@ unsigned atomic_spin_mutex::spin_rounds = SPINLOOP;
 
 void atomic_spin_mutex::wait_and_lock() noexcept
 {
-  uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);
+  uint32_t lk = PENDING + fetch_add(PENDING, std::memory_order_relaxed);
 
   /* We hope to avoid system calls when the conflict is resolved quickly. */
   for (auto spin = spin_rounds;;)

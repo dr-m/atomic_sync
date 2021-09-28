@@ -90,7 +90,7 @@ as follows:
 ```sh
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS=-DSPINLOOP=125 ..
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-13 ..
 cmake --build .
 time test/test_atomic_sync
 time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
@@ -98,15 +98,16 @@ time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
 The `numactl` command would bind the process to one NUMA node (CPU package)
 in order to avoid shipping cache lines between NUMA nodes.
 The smallest difference between plain and `numactl` that I achieved was
-with `-DSPINLOOP=125`. For more stable times, I temporarily changed the
+with `-DCMAKE_CXX_FLAGS=-DSPINLOOP=125`.
+For more stable times, I temporarily changed the
 value of `N_ROUNDS` to 500 in the source code. The durations below are
-the fastest of several attempts with GCC 11.2.0 and `N_ROUNDS = 100`.
+the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
 | invocation                  | real   | user    | system  |
 | ----------                  | -----: | ------: | ------: |
-| plain                       | 2.369s | 49.495s |  8.493s |
-| `numactl`                   | 1.459s | 20.874s |  5.296s |
-| `-DSPINLOOP=125`            | 2.312s | 48.785s |  7.560s |
-| `-DSPINLOOP=125`,`numactl`  | 1.472s | 21.244s |  5.068s |
+| plain                       | 1.865s | 43.523s |  5.650s |
+| `numactl`                   | 1.176s | 15.356s |  4.312s |
+| `-DSPINLOOP=125`            | 1.838s | 41.916s |  6.198s |
+| `-DSPINLOOP=125`,`numactl`  | 1.186s | 15.537s |  3.927s |
 
 The execution times without `numactl` vary a lot; a much longer run
 (with a larger value of `N_ROUNDS`) is advisable for performance tests.
@@ -116,5 +117,5 @@ latency was made about 10× it was on Haswell. Later microarchitectures
 reduced the latency again. That latency may affect the optimal
 spinloop count, but it is only one of many factors.
 
-September 26, 2021
+September 28, 2021
 Marko Mäkelä
