@@ -37,7 +37,7 @@ void atomic_mutex::wait_and_lock() noexcept
     else
     {
       static_assert(HOLDER == (1U << 31), "compatibility");
-      __asm__ goto("lock btsq $31, %0\n\t"
+      __asm__ goto("lock btsl $31, %0\n\t"
                    "jc %l1" : : "m" (*this) : "cc", "memory" : reload);
       std::atomic_thread_fence(std::memory_order_acquire);
       return;
@@ -93,7 +93,7 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     {
 #if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
       static_assert(HOLDER == (1U << 31), "compatibility");
-      __asm__ goto("lock btsq $31, %0\n\t"
+      __asm__ goto("lock btsl $31, %0\n\t"
                    "jnc %l1" : : "m" (*this) : "cc", "memory" : acquired);
       lk|= HOLDER;
 #endif
@@ -124,7 +124,7 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     else
     {
       static_assert(HOLDER == (1U << 31), "compatibility");
-      __asm__ goto("lock btsq $31, %0\n\t"
+      __asm__ goto("lock btsl $31, %0\n\t"
                    "jc %l1" : : "m" (*this) : "cc", "memory" : reload);
     acquired:
       std::atomic_thread_fence(std::memory_order_acquire);
