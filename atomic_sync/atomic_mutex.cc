@@ -27,11 +27,10 @@ void atomic_mutex::wait_and_lock() noexcept
   {
     if (lk & HOLDER)
     {
-#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
-    do_wait:
-      lk |= HOLDER;
-#endif
       wait(lk);
+#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+    reload:
+#endif
       lk = load(std::memory_order_relaxed);
     }
 #if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
@@ -39,10 +38,11 @@ void atomic_mutex::wait_and_lock() noexcept
     {
       static_assert(HOLDER == (1U << 0), "compatibility");
       __asm__ goto("lock btsq $0, %0\n\t"
-                   "jc %l1" : : "m" (*this) : "cc", "memory" : do_wait);
+                   "jc %l1" : : "m" (*this) : "cc", "memory" : reload);
+      std::atomic_thread_fence(std::memory_order_acquire);
       return;
     }
-#elif defined _WIN32
+#elif defined _M_IX86||defined _M_X64||defined __i386__||defined __x86_64__
     else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
                                    std::memory_order_relaxed))
     {
@@ -63,7 +63,7 @@ void atomic_mutex::wait_and_lock() noexcept
 }
 
 #ifdef SPINLOOP
-/** The count of 125 seems to yield the best NUMA performance on
+/** The count of 50 seems to yield the best NUMA performance on
 Intel Xeon E5-2630 v4 (Haswell microarchitecture) */
 unsigned atomic_spin_mutex::spin_rounds = SPINLOOP;
 # ifdef _WIN32
@@ -80,11 +80,23 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     assert(~HOLDER & lk);
     if (lk & HOLDER)
       lk = load(std::memory_order_relaxed);
+#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+#elif defined _M_IX86||defined _M_X64||defined __i386__||defined __x86_64__
     else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
                                    std::memory_order_relaxed))
       return;
+#else
+    else if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
+      goto acquired;
+#endif
     else
     {
+#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+      static_assert(HOLDER == (1U << 0), "compatibility");
+      __asm__ goto("lock btsq $0, %0\n\t"
+                   "jnc %l1" : : "m" (*this) : "cc", "memory" : acquired);
+      lk|= HOLDER;
+#endif
 # ifdef _WIN32
       YieldProcessor();
 # elif defined(_ARCH_PWR8)
@@ -103,18 +115,32 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     if (lk & HOLDER)
     {
       wait(lk);
+#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+    reload:
+#endif
       lk = load(std::memory_order_relaxed);
     }
-#if defined _WIN32 || defined __i386__ || defined __x86_64__
+#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+    else
+    {
+      static_assert(HOLDER == (1U << 0), "compatibility");
+      __asm__ goto("lock btsq $0, %0\n\t"
+                   "jc %l1" : : "m" (*this) : "cc", "memory" : reload);
+    acquired:
+      std::atomic_thread_fence(std::memory_order_acquire);
+      return;
+    }
+#elif defined _M_IX86||defined _M_X64||defined __i386__||defined __x86_64__
     else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
                                    std::memory_order_relaxed))
-      break;
+      return;
 #else
     else if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
     {
+    acquired:
       assert(lk);
       std::atomic_thread_fence(std::memory_order_acquire);
-      break;
+      return;
     }
     else
       assert(~HOLDER & lk);
