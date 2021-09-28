@@ -104,10 +104,10 @@ value of `N_ROUNDS` to 500 in the source code. The durations below are
 the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
 | invocation                  | real   | user    | system  |
 | ----------                  | -----: | ------: | ------: |
-| plain                       | 1.799s | 41.745s |  5.617s |
-| `numactl`                   | 1.147s | 15.403s |  4.027s |
-| `-DSPINLOOP=50`             | 1.798s | 42.059s |  5.256s |
-| `-DSPINLOOP=50`,`numactl`   | 1.170s | 15.434s |  4.106s |
+| plain                       | 1.785s | 41.709s |  5.221s |
+| `numactl`                   | 1.118s | 16.219s |  3.552s |
+| `-DSPINLOOP=50`             | 1.767s | 39.852s |  5.673s |
+| `-DSPINLOOP=50`,`numactl`   | 1.151s | 15.708s |  4.241s |
 
 The execution times without `numactl` vary a lot; a much longer run
 (with a larger value of `N_ROUNDS`) is advisable for performance tests.

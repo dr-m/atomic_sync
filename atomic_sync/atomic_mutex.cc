@@ -23,7 +23,7 @@ inline void atomic_mutex::wait(uint32_t old) const noexcept {FUTEX(WAIT, old);}
 
 void atomic_mutex::wait_and_lock() noexcept
 {
-  for (uint32_t lk = PENDING + fetch_add(PENDING, std::memory_order_relaxed);;)
+  for (uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);;)
   {
     if (lk & HOLDER)
     {
@@ -36,8 +36,8 @@ void atomic_mutex::wait_and_lock() noexcept
 #if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
     else
     {
-      static_assert(HOLDER == (1U << 0), "compatibility");
-      __asm__ goto("lock btsq $0, %0\n\t"
+      static_assert(HOLDER == (1U << 31), "compatibility");
+      __asm__ goto("lock btsq $31, %0\n\t"
                    "jc %l1" : : "m" (*this) : "cc", "memory" : reload);
       std::atomic_thread_fence(std::memory_order_acquire);
       return;
@@ -72,7 +72,7 @@ unsigned atomic_spin_mutex::spin_rounds = SPINLOOP;
 
 void atomic_spin_mutex::wait_and_lock() noexcept
 {
-  uint32_t lk = PENDING + fetch_add(PENDING, std::memory_order_relaxed);
+  uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);
 
   /* We hope to avoid system calls when the conflict is resolved quickly. */
   for (auto spin = spin_rounds;;)
@@ -92,8 +92,8 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     else
     {
 #if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
-      static_assert(HOLDER == (1U << 0), "compatibility");
-      __asm__ goto("lock btsq $0, %0\n\t"
+      static_assert(HOLDER == (1U << 31), "compatibility");
+      __asm__ goto("lock btsq $31, %0\n\t"
                    "jnc %l1" : : "m" (*this) : "cc", "memory" : acquired);
       lk|= HOLDER;
 #endif
@@ -123,8 +123,8 @@ void atomic_spin_mutex::wait_and_lock() noexcept
 #if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
     else
     {
-      static_assert(HOLDER == (1U << 0), "compatibility");
-      __asm__ goto("lock btsq $0, %0\n\t"
+      static_assert(HOLDER == (1U << 31), "compatibility");
+      __asm__ goto("lock btsq $31, %0\n\t"
                    "jc %l1" : : "m" (*this) : "cc", "memory" : reload);
     acquired:
       std::atomic_thread_fence(std::memory_order_acquire);

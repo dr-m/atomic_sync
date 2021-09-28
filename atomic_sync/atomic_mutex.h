@@ -27,9 +27,7 @@ class atomic_mutex : std::atomic<uint32_t>
   inline void wait(uint32_t old) const noexcept;
 #endif
   /** A flag identifying that the lock is being held */
-  static constexpr uint32_t HOLDER = 1;
-  /** The unit counting lock waiters */
-  static constexpr uint32_t PENDING = 2;
+  static constexpr uint32_t HOLDER = 1U << 31;
   /** Wait until the mutex has been acquired */
   void wait_and_lock() noexcept;
 public:
@@ -44,7 +42,7 @@ public:
   bool trylock() noexcept
   {
     uint32_t lk = 0;
-    return compare_exchange_strong(lk, HOLDER + PENDING,
+    return compare_exchange_strong(lk, HOLDER + 1,
                                    std::memory_order_acquire,
                                    std::memory_order_relaxed);
   }
@@ -52,8 +50,8 @@ public:
   void lock() noexcept { if (!trylock()) wait_and_lock(); }
   void unlock() noexcept
   {
-    const uint32_t lk = fetch_sub(HOLDER + PENDING, std::memory_order_release);
-    if (lk != HOLDER + PENDING)
+    const uint32_t lk = fetch_sub(HOLDER + 1, std::memory_order_release);
+    if (lk != HOLDER + 1)
     {
       assert(lk & HOLDER);
       notify_one();
