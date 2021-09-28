@@ -30,12 +30,23 @@ void atomic_mutex::wait_and_lock() noexcept
       wait(lk);
       lk = load(std::memory_order_relaxed);
     }
+#if defined _WIN32 || defined __i386__ || defined __x86_64__
     else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
                                    std::memory_order_relaxed))
     {
       assert(lk);
       return;
     }
+#else
+    else if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
+    {
+      assert(lk);
+      std::atomic_thread_fence(std::memory_order_acquire);
+      return;
+    }
+    else
+      assert(~HOLDER & lk);
+#endif
   }
 }
 
@@ -82,9 +93,20 @@ void atomic_spin_mutex::wait_and_lock() noexcept
       wait(lk);
       lk = load(std::memory_order_relaxed);
     }
+#if defined _WIN32 || defined __i386__ || defined __x86_64__
     else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
-				   std::memory_order_relaxed))
+                                   std::memory_order_relaxed))
       break;
+#else
+    else if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
+    {
+      assert(lk);
+      std::atomic_thread_fence(std::memory_order_acquire);
+      break;
+    }
+    else
+      assert(~HOLDER & lk);
+#endif
   }
 }
 #endif
