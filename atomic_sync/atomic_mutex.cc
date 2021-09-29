@@ -21,6 +21,35 @@ void atomic_mutex::notify_one() noexcept {FUTEX(WAKE, 1);}
 inline void atomic_mutex::wait(uint32_t old) const noexcept {FUTEX(WAIT, old);}
 #endif
 
+/*
+
+Unfortunately, compilers targeting IA-32 or AMD64 currently cannot
+translate the following single-bit operations into Intel 80386 instructions:
+
+     m.fetch_or(1<<b) & 1<<b       LOCK BTS b, m
+     m.fetch_and(~(1<<b)) & 1<<b   LOCK BTR b, m
+     m.fetch_xor(1<<b) & 1<<b      LOCK BTC b, m
+
+Hence, we will manually translate fetch_or() using GCC-style inline
+assembler code or a MSVC intrinsic function.
+
+*/
+#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+# define IF_FETCH_OR_GOTO(mem, bit, label)				\
+  __asm__ goto("lock btsl $" #bit ", %0\n\t"				\
+               "jc %l1" : : "m" (mem) : "cc", "memory" : label);
+# define IF_NOT_FETCH_OR_GOTO(mem, bit, label)				\
+  __asm__ goto("lock btsl $" #bit ", %0\n\t"				\
+               "jnc %l1" : : "m" (mem) : "cc", "memory" : label);
+#elif defined _MSC_VER && (defined _M_IX86 || defined _M_IX64)
+# define IF_FETCH_OR_GOTO(mem, bit, label)				\
+  if (_interlockedbittestandset(reinterpret_cast<volatile long*>(&mem), bit)) \
+    goto label;
+# define IF_NOT_FETCH_OR_GOTO(mem, bit, label)				\
+  if (!_interlockedbittestandset(reinterpret_cast<volatile long*>(&mem), bit))\
+    goto label;
+#endif
+
 void atomic_mutex::wait_and_lock() noexcept
 {
   for (uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);;)
@@ -28,25 +57,17 @@ void atomic_mutex::wait_and_lock() noexcept
     if (lk & HOLDER)
     {
       wait(lk);
-#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+#ifdef IF_FETCH_OR_GOTO
     reload:
 #endif
       lk = load(std::memory_order_relaxed);
     }
-#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+#ifdef IF_FETCH_OR_GOTO
     else
     {
       static_assert(HOLDER == (1U << 31), "compatibility");
-      __asm__ goto("lock btsl $31, %0\n\t"
-                   "jc %l1" : : "m" (*this) : "cc", "memory" : reload);
+      IF_FETCH_OR_GOTO(*this, 31, reload);
       std::atomic_thread_fence(std::memory_order_acquire);
-      return;
-    }
-#elif defined _M_IX86||defined _M_X64||defined __i386__||defined __x86_64__
-    else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
-                                   std::memory_order_relaxed))
-    {
-      assert(lk);
       return;
     }
 #else
@@ -80,22 +101,15 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     assert(~HOLDER & lk);
     if (lk & HOLDER)
       lk = load(std::memory_order_relaxed);
-#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
-#elif defined _M_IX86||defined _M_X64||defined __i386__||defined __x86_64__
-    else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
-                                   std::memory_order_relaxed))
-      return;
-#else
-    else if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
-      goto acquired;
-#endif
     else
     {
-#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+#ifdef IF_NOT_FETCH_OR_GOTO
       static_assert(HOLDER == (1U << 31), "compatibility");
-      __asm__ goto("lock btsl $31, %0\n\t"
-                   "jnc %l1" : : "m" (*this) : "cc", "memory" : acquired);
+      IF_NOT_FETCH_OR_GOTO(*this, 31, acquired);
       lk|= HOLDER;
+#else
+      if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
+        goto acquired;
 #endif
 # ifdef _WIN32
       YieldProcessor();
@@ -115,36 +129,26 @@ void atomic_spin_mutex::wait_and_lock() noexcept
     if (lk & HOLDER)
     {
       wait(lk);
-#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+#ifdef IF_FETCH_OR_GOTO
     reload:
 #endif
       lk = load(std::memory_order_relaxed);
     }
-#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
     else
     {
+#ifdef IF_FETCH_OR_GOTO
       static_assert(HOLDER == (1U << 31), "compatibility");
-      __asm__ goto("lock btsl $31, %0\n\t"
-                   "jc %l1" : : "m" (*this) : "cc", "memory" : reload);
-    acquired:
-      std::atomic_thread_fence(std::memory_order_acquire);
-      return;
-    }
-#elif defined _M_IX86||defined _M_X64||defined __i386__||defined __x86_64__
-    else if (compare_exchange_weak(lk, lk | HOLDER, std::memory_order_acquire,
-                                   std::memory_order_relaxed))
-      return;
+      IF_FETCH_OR_GOTO(*this, 31, reload);
 #else
-    else if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
-    {
+      if ((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER)
+        continue;
+      else
+        assert(lk);
+#endif
     acquired:
-      assert(lk);
       std::atomic_thread_fence(std::memory_order_acquire);
       return;
     }
-    else
-      assert(~HOLDER & lk);
-#endif
   }
 }
 #endif
