@@ -58,7 +58,6 @@ void atomic_shared_mutex_impl<mutex>::shared_lock_wait() noexcept
     ex.unlock();
     if (acquired)
       break;
-    std::this_thread::yield();
   }
 }
 
