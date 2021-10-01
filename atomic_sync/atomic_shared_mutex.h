@@ -137,7 +137,12 @@ public:
   void lock() noexcept
   {
     ex.lock();
-    if (uint32_t lk = fetch_or(X, std::memory_order_acquire))
+    /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
+    as a loop around LOCK CMPXCHG. In this particular case, setting the
+    most significant bit using fetch_add() is equivalent, and is
+    translated into a simple LOCK XADD. */
+    static_assert(X == 1U << 31, "compatibility");
+    if (uint32_t lk = fetch_add(X, std::memory_order_acquire))
       lock_wait(lk);
   }
 
