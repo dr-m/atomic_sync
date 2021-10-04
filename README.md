@@ -82,6 +82,16 @@ For example, Apple XCode based on clang++-12 explicitly declares
 #define _LIBCPP_AVAILABILITY_SYNC __attribute__((unavailable))
 ```
 
+### Source code layout
+
+The subdirectory `atomic_sync` is the core of this, containing the
+implementation of `atomic_mutex` and `atomic_shared_mutex`.
+
+The subdirectory `examples` contains some additional code that
+demonstrates how `atomic_mutex` or `atomic_shared_mutex` can be used.
+
+The subdirectory `test` contains test programs.
+
 ### NUMA notes
 
 I have tested the `atomic_mutex::wait_and_lock()` implementation on a
@@ -117,5 +127,5 @@ latency was made about 10× it was on Haswell. Later microarchitectures
 reduced the latency again. That latency may affect the optimal
 spinloop count, but it is only one of many factors.
 
-October 1, 2021
+October 4, 2021
 Marko Mäkelä

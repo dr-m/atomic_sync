@@ -28,4 +28,5 @@ ELSE()
 ENDIF()
 
 ADD_SUBDIRECTORY (atomic_sync)
+ADD_SUBDIRECTORY (examples)
 ADD_SUBDIRECTORY (test)
