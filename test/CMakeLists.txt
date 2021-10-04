@@ -3,4 +3,5 @@ FIND_PACKAGE (Threads)
 TARGET_LINK_LIBRARIES (test_atomic_sync LINK_PUBLIC
   atomic_mutex atomic_shared_mutex
   atomic_recursive_shared_mutex
+  transactional_lock_guard
   Threads::Threads)

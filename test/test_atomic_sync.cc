@@ -4,6 +4,7 @@
 #include "atomic_mutex.h"
 #include "atomic_shared_mutex.h"
 #include "atomic_recursive_shared_mutex.h"
+#include "transactional_lock_guard.h"
 
 static std::atomic<bool> critical;
 
@@ -17,11 +18,10 @@ static void test_atomic_mutex()
 {
   for (auto i = N_ROUNDS * M_ROUNDS; i--; )
   {
-    m.lock();
+    transactional_lock_guard<atomic_spin_mutex> g(m);
     assert(!critical);
     critical = true;
     critical = false;
-    m.unlock();
   }
 }
 
@@ -31,29 +31,30 @@ static void test_shared_mutex()
 {
   for (auto i = N_ROUNDS; i--; )
   {
-    sux.lock();
-    assert(!critical);
-    critical = true;
-    critical = false;
-    sux.unlock();
-
-    for (auto j = M_ROUNDS; j--; )
     {
-      sux.lock_shared();
+      transactional_lock_guard<atomic_spin_shared_mutex> g(sux);
       assert(!critical);
-      sux.unlock_shared();
+      critical = true;
+      critical = false;
     }
 
     for (auto j = M_ROUNDS; j--; )
     {
-      sux.lock_update();
+      transactional_shared_lock_guard<atomic_spin_shared_mutex> g(sux);
       assert(!critical);
-      sux.update_lock_upgrade();
+    }
+
+    for (auto j = M_ROUNDS; j--; )
+    {
+      transactional_update_lock_guard<atomic_spin_shared_mutex> g(sux);
+      assert(!critical);
+      if (!g.was_elided())
+        sux.update_lock_upgrade();
       assert(!critical);
       critical = true;
       critical = false;
-      sux.lock_update_downgrade();
-      sux.unlock_update();
+      if (!g.was_elided())
+        sux.lock_update_downgrade();
     }
   }
 }

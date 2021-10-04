@@ -92,6 +92,28 @@ demonstrates how `atomic_mutex` or `atomic_shared_mutex` can be used.
 
 The subdirectory `test` contains test programs.
 
+### Lock elision
+
+The `transactional_lock_guard` is like `std::lock_guard` but designed
+for supporting transactional memory around `atomic_mutex` or
+`atomic_shared_mutex`. If support is not detected at compilation or
+run time, it should be equivalent to `std::lock_guard`.
+
+The `transactional_shared_lock_guard` and `transactional_update_lock_guard`
+are for the two non-exclusive modes of `atomic_shared_mutex`.
+
+The lock elision may be disabled by specifying
+`-DCMAKE_CXX_FLAGS=-DNO_ELISION`.
+
+Currently, lock elision has been implemented for
+Intel Restricted Transactional Memory (RTM).
+You may want to check the statistics:
+```sh
+perf record -g -e tx-abort test/test_atomic_sync
+```
+In this test, lock elision is detrimental for performance, because locking
+conflicts make transaction aborts and re-execution extremely common.
+
 ### NUMA notes
 
 I have tested the `atomic_mutex::wait_and_lock()` implementation on a
@@ -100,7 +122,8 @@ as follows:
 ```sh
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-13 ..
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-13 \
+-DCMAKE_CXX_FLAGS=-DNO_ELISION ..
 cmake --build .
 time test/test_atomic_sync
 time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
@@ -108,16 +131,16 @@ time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
 The `numactl` command would bind the process to one NUMA node (CPU package)
 in order to avoid shipping cache lines between NUMA nodes.
 The smallest difference between plain and `numactl` that I achieved was
-with `-DCMAKE_CXX_FLAGS=-DSPINLOOP=50`.
+with `-DCMAKE_CXX_FLAGS='-DNO_ELISION -DSPINLOOP=50'`.
 For more stable times, I temporarily changed the
 value of `N_ROUNDS` to 500 in the source code. The durations below are
 the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
 | invocation                  | real   | user    | system  |
 | ----------                  | -----: | ------: | ------: |
-| plain                       | 1.755s | 40.369s |  5.644s |
-| `numactl`                   | 1.115s | 15.364s |  3.715s |
-| `-DSPINLOOP=50`             | 1.773s | 40.370s |  5.817s |
-| `-DSPINLOOP=50`,`numactl`   | 1.049s | 14.706s |  3.483s |
+| plain                       | 1.722s | 38.774s |  4.804s |
+| `numactl`                   | 1.169s | 16.314s |  4.436s |
+| `-DSPINLOOP=50`             | 1.814s | 41.940s |  5.648s |
+| `-DSPINLOOP=50`,`numactl`   | 1.159s | 16.172s |  4.193s |
 
 The execution times without `numactl` vary a lot; a much longer run
 (with a larger value of `N_ROUNDS`) is advisable for performance tests.
