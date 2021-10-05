@@ -1,6 +1,8 @@
 #pragma once
 
 #if defined __powerpc64__ || defined __s390x__ || defined __s390__
+#elif defined __aarch64__ && defined __GNUC__ && __GNUC__ >= 10
+#elif defined __aarch64__ && defined __clang__ && __clang_major__ >= 10
 #elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
 #elif defined __GNUC__ && (defined __i386__ || defined __x86_64__)
 # if __GNUC__ >= 8
@@ -46,6 +48,28 @@ static inline bool xbegin() { return __TM_begin() == _HTM_TBEGIN_STARTED; }
 template<unsigned char i> static inline void xabort() { __TM_abort(); }
 
 static inline void xend() { __TM_end(); }
+# elif defined __aarch64__
+/* FIXME: No runtime detection of TME has been implemented! */
+#  define INLINE __attribute__((always_inline))
+#  ifdef __clang__
+#   define TRANSACTIONAL_TARGET __attribute__((target("tme")))
+#  else
+#   define TRANSACTIONAL_TARGET __attribute__((target("+tme")))
+#  endif
+
+TRANSACTIONAL_TARGET INLINE static inline bool xbegin()
+{
+  int ret;
+  __asm__ __volatile__ ("tstart %x0" : "=r"(ret) :: "memory");
+  return !ret;
+}
+
+template<unsigned char i>
+TRANSACTIONAL_TARGET INLINE static inline void xabort()
+{ __asm__ __volatile__ ("tcancel %x0" :: "n"(i) :: "memory"); }
+
+TRANSACTIONAL_TARGET INLINE static inline void xend()
+{ __asm__ volatile ("tcommit" ::: "memory"); }
 # endif
 #endif
 

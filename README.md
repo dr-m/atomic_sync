@@ -105,7 +105,7 @@ are for the two non-exclusive modes of `atomic_shared_mutex`.
 The lock elision may be disabled by specifying
 `-DCMAKE_CXX_FLAGS=-DNO_ELISION`.
 
-Currently, lock elision has been implemented for
+Currently, lock elision has been only tested with
 Intel Restricted Transactional Memory (RTM).
 You may want to check the statistics:
 ```sh
@@ -113,6 +113,17 @@ perf record -g -e tx-abort test/test_atomic_sync
 ```
 In this test, lock elision is detrimental for performance, because locking
 conflicts make transaction aborts and re-execution extremely common.
+
+The elision is very simple, not even implementing any retry mechanism.
+If the lock cannot be elided on the first attempt, we will fall back
+to acquiring the lock.
+
+Untested code for lock elision is available for the following instruction
+set architectures:
+
+* 64-bit POWER (no detection; available starting with POWER 8)
+* IBM zSeries (S390, S390x)
+* ARMv8 (no detection; try `-DNO_ELISION` if it crashes)
 
 ### NUMA notes
 
@@ -150,5 +161,5 @@ latency was made about 10× it was on Haswell. Later microarchitectures
 reduced the latency again. That latency may affect the optimal
 spinloop count, but it is only one of many factors.
 
-October 4, 2021
+October 5, 2021
 Marko Mäkelä

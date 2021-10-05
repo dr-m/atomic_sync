@@ -1,6 +1,8 @@
 #include "transactional_lock_guard.h"
 #ifndef NO_ELISION
 # if defined __powerpc64__ || defined __s390x__ || defined __s390__
+# elif defined __aarch64__
+/* FIXME: Implement a runtime check for Transactional Memory Extension (TME) */
 # elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
 #  include <intrin.h>
 
