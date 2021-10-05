@@ -1,6 +1,7 @@
 #include "transactional_lock_guard.h"
 #ifndef NO_ELISION
-# ifdef _MSC_VER
+# if defined __powerpc64__ || defined __s390x__ || defined __s390__
+# elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
 #  include <intrin.h>
 
 static bool can_elide()
@@ -13,7 +14,8 @@ static bool can_elide()
   return regs[1] & 1U << 11; /* Restricted Transactional Memory (RTM) */
 }
 
-# elif defined __i386__||defined __x86_64__
+bool transactional_lock_guard_can_elide = can_elide();
+# elif defined __GNUC__ && (defined __i386__ || defined __x86_64__)
 #  include <cpuid.h>
 
 static bool can_elide()
@@ -24,7 +26,7 @@ static bool can_elide()
   __cpuid_count(7, 0, eax, ebx, ecx, edx);
   return ebx & 1U << 11; /* Restricted Transactional Memory (RTM) */
 }
-# endif
 
 bool transactional_lock_guard_can_elide = can_elide();
+# endif
 #endif

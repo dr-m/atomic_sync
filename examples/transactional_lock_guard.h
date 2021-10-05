@@ -1,6 +1,7 @@
 #pragma once
 
-#if defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
+#if defined __powerpc64__ || defined __s390x__ || defined __s390__
+#elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
 #elif defined __GNUC__ && (defined __i386__ || defined __x86_64__)
 # if __GNUC__ >= 8
 # elif defined __clang__ && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang__minor >= 8))
@@ -14,9 +15,9 @@
 #ifdef NO_ELISION
 # define TRANSACTIONAL_TARGET /* nothing */
 #else
+# if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
 extern bool transactional_lock_guard_can_elide;
 
-# if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
 #  include <immintrin.h>
 #  ifdef __GNUC__
 #   define TRANSACTIONAL_TARGET __attribute__((target("rtm")))
@@ -35,6 +36,16 @@ template<unsigned char i>
 TRANSACTIONAL_TARGET INLINE static inline void xabort() { _xabort(i); }
 
 TRANSACTIONAL_TARGET INLINE static inline void xend() { _xend(); }
+# elif defined __powerpc64__ || defined __s390x__ || defined __s390__
+#  include <htmxlintrin.h>
+#  define TRANSACTIONAL_TARGET
+#  define INLINE /* nothing */
+
+static inline bool xbegin() { return __TM_begin() == _HTM_TBEGIN_STARTED; }
+
+template<unsigned char i> static inline void xabort() { __TM_abort(); }
+
+static inline void xend() { __TM_end(); }
 # endif
 #endif
 
