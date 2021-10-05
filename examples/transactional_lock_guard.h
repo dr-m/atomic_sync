@@ -1,29 +1,41 @@
 #pragma once
 
-#if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
-#else
-# define NO_ELISION /* skip Hardware Lock Elision */
+#if defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
+#elif defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+# if __GNUC__ >= 8
+# elif defined __clang__ && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang__minor >= 8))
+# else
+#  define NO_ELISION
+# endif
+#else /* Transactional memory has not been implemented for this ISA */
+# define NO_ELISION
 #endif
 
-#ifndef NO_ELISION
+#ifdef NO_ELISION
+# define TRANSACTIONAL_TARGET /* nothing */
+#else
 extern bool transactional_lock_guard_can_elide;
 
-static inline bool xbegin()
+# if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
+#  include <immintrin.h>
+#  ifdef __GNUC__
+#   define TRANSACTIONAL_TARGET __attribute__((target("rtm")))
+#   define INLINE __attribute__((always_inline))
+#  else
+#   define TRANSACTIONAL_TARGET /* nothing */
+#   define INLINE /* nothing */
+#  endif
+
+TRANSACTIONAL_TARGET INLINE static inline bool xbegin()
 {
-  if (!transactional_lock_guard_can_elide)
-    return false;
-  unsigned ret = 0;
-  __asm__ __volatile__ ("xbegin .+6" : "+a" (ret) :: "memory");
-  return ret == ~0U;
+  return transactional_lock_guard_can_elide && _xbegin() == _XBEGIN_STARTED;
 }
 
-template<uint8_t i>
-static inline void xabort()
-{
-  __asm__ __volatile__ ("xabort %0" :: "K" (i) : "memory");
-}
+template<unsigned char i>
+TRANSACTIONAL_TARGET INLINE static inline void xabort() { _xabort(i); }
 
-static inline void xend() { __asm__ __volatile__ ("xend" ::: "memory"); }
+TRANSACTIONAL_TARGET INLINE static inline void xend() { _xend(); }
+# endif
 #endif
 
 template<class mutex>
@@ -32,7 +44,7 @@ class transactional_lock_guard
   mutex &m;
 
 public:
-  transactional_lock_guard(mutex &m) : m(m)
+  TRANSACTIONAL_TARGET INLINE transactional_lock_guard(mutex &m) : m(m)
   {
 #ifndef NO_ELISION
     if (xbegin())
@@ -45,7 +57,7 @@ public:
     m.lock();
   }
   transactional_lock_guard(const transactional_lock_guard &) = delete;
-  ~transactional_lock_guard()
+  TRANSACTIONAL_TARGET INLINE ~transactional_lock_guard()
   {
 #ifndef NO_ELISION
     if (was_elided()) xend(); else
@@ -71,7 +83,7 @@ class transactional_shared_lock_guard
 #endif
 
 public:
-  transactional_shared_lock_guard(mutex &m) : m(m)
+  TRANSACTIONAL_TARGET INLINE transactional_shared_lock_guard(mutex &m) : m(m)
   {
 #ifndef NO_ELISION
     if (xbegin())
@@ -89,7 +101,7 @@ public:
   }
   transactional_shared_lock_guard(const transactional_shared_lock_guard &) =
     delete;
-  ~transactional_shared_lock_guard()
+  TRANSACTIONAL_TARGET INLINE ~transactional_shared_lock_guard()
   {
 #ifndef NO_ELISION
     if (was_elided()) xend(); else
@@ -106,7 +118,7 @@ class transactional_update_lock_guard
   mutex &m;
 
 public:
-  transactional_update_lock_guard(mutex &m) : m(m)
+  TRANSACTIONAL_TARGET INLINE transactional_update_lock_guard(mutex &m) : m(m)
   {
 #ifndef NO_ELISION
     if (xbegin())
@@ -120,7 +132,7 @@ public:
   }
   transactional_update_lock_guard(const transactional_update_lock_guard &) =
     delete;
-  ~transactional_update_lock_guard()
+  TRANSACTIONAL_TARGET INLINE ~transactional_update_lock_guard()
   {
 #ifndef NO_ELISION
     if (was_elided()) xend(); else

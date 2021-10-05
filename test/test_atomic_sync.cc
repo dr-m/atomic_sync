@@ -20,7 +20,7 @@ static atomic_spin_mutex m;
 # define transactional_assert(x) if (!x) goto abort;
 #endif
 
-static void test_atomic_mutex()
+TRANSACTIONAL_TARGET static void test_atomic_mutex()
 {
   for (auto i = N_ROUNDS * M_ROUNDS; i--; )
   {
@@ -39,7 +39,7 @@ abort:
 
 static atomic_spin_shared_mutex sux;
 
-static void test_shared_mutex()
+TRANSACTIONAL_TARGET static void test_shared_mutex()
 {
   for (auto i = N_ROUNDS; i--; )
   {
