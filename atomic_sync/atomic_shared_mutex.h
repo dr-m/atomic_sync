@@ -71,10 +71,10 @@ class atomic_shared_mutex_impl : std::atomic<uint32_t>
 public:
   /** @return whether an exclusive lock is being held or waited for */
   bool is_waiting() const noexcept
-  { return (load(std::memory_order_relaxed) & X) != 0; }
+  { return (load(std::memory_order_acquire) & X) != 0; }
   /** @return whether the exclusive lock is being held */
   bool is_locked() const noexcept
-  { return load(std::memory_order_relaxed) == X; }
+  { return load(std::memory_order_acquire) == X; }
 
   /** @return whether the lock is being held or waited for */
   bool is_locked_or_waiting() const noexcept

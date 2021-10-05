@@ -33,10 +33,10 @@ class atomic_mutex : std::atomic<uint32_t>
 public:
   /** @return whether the mutex is being held or waited for */
   bool is_locked_or_waiting() const
-  { return load(std::memory_order_relaxed) != 0; }
+  { return load(std::memory_order_acquire) != 0; }
   /** @return whether the mutex is being held by any thread */
   bool is_locked() const
-  { return (load(std::memory_order_relaxed) & HOLDER) != 0; }
+  { return (load(std::memory_order_acquire) & HOLDER) != 0; }
 
   /** @return whether the mutex was acquired */
   bool trylock() noexcept
