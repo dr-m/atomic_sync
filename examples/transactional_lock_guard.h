@@ -20,6 +20,7 @@
 
 #ifdef NO_ELISION
 # define TRANSACTIONAL_TARGET /* nothing */
+# define INLINE /* nothing */
 #else
 # if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
 extern bool transactional_lock_guard_can_elide;
