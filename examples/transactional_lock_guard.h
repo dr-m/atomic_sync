@@ -1,5 +1,9 @@
 #pragma once
 
+#if !defined __s390x__ && (defined __zarch__ || defined __SYSC_ZARCH__)
+# define __s390x__
+#endif
+
 #if defined __powerpc64__ || defined __s390x__ || defined __s390__
 #elif defined __aarch64__ && defined __GNUC__ && __GNUC__ >= 10
 #elif defined __aarch64__ && defined __clang__ && __clang_major__ >= 10
@@ -19,6 +23,7 @@
 #else
 # if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
 extern bool transactional_lock_guard_can_elide;
+#define x_context /* empty */
 
 #  include <immintrin.h>
 #  ifdef __GNUC__
@@ -34,8 +39,7 @@ TRANSACTIONAL_TARGET INLINE static inline bool xbegin()
   return transactional_lock_guard_can_elide && _xbegin() == _XBEGIN_STARTED;
 }
 
-template<unsigned char i>
-TRANSACTIONAL_TARGET INLINE static inline void xabort() { _xabort(i); }
+TRANSACTIONAL_TARGET INLINE static inline void xabort() { _xabort(0); }
 
 TRANSACTIONAL_TARGET INLINE static inline void xend() { _xend(); }
 # elif defined __powerpc64__ || defined __s390x__ || defined __s390__
@@ -43,12 +47,14 @@ TRANSACTIONAL_TARGET INLINE static inline void xend() { _xend(); }
 #  define TRANSACTIONAL_TARGET
 #  define INLINE /* nothing */
 
-static inline bool xbegin() { return __TM_begin() == _HTM_TBEGIN_STARTED; }
+#define x_context TM_buff_type TM_buff
+#define xbegin() __TM_begin(TM_buff) == _HTM_TBEGIN_STARTED
 
-template<unsigned char i> static inline void xabort() { __TM_abort(); }
+static inline void xabort() { __TM_abort(); }
 
 static inline void xend() { __TM_end(); }
 # elif defined __aarch64__
+#  define x_context /* empty */
 /* FIXME: No runtime detection of TME has been implemented! */
 #  define INLINE __attribute__((always_inline))
 #  ifdef __clang__
@@ -64,7 +70,6 @@ TRANSACTIONAL_TARGET INLINE static inline bool xbegin()
   return !ret;
 }
 
-template<unsigned char i>
 TRANSACTIONAL_TARGET INLINE static inline void xabort()
 { __asm__ __volatile__ ("tcancel %x0" :: "n"(i) :: "memory"); }
 
@@ -77,6 +82,9 @@ template<class mutex>
 class transactional_lock_guard
 {
   mutex &m;
+#ifndef NO_ELISION
+  x_context;
+#endif
 
 public:
   TRANSACTIONAL_TARGET INLINE transactional_lock_guard(mutex &m) : m(m)
@@ -86,7 +94,7 @@ public:
     {
       if (was_elided())
         return;
-      xabort<0xff>();
+      xabort();
     }
 #endif
     m.lock();
@@ -112,6 +120,7 @@ class transactional_shared_lock_guard
 {
   mutex &m;
 #ifndef NO_ELISION
+  x_context;
   bool elided;
 #else
   static constexpr bool elided = false;
@@ -128,7 +137,7 @@ public:
         elided = true;
         return;
       }
-      xabort<0xff>();
+      xabort();
     }
     elided = false;
 #endif
@@ -151,6 +160,9 @@ template<class mutex>
 class transactional_update_lock_guard
 {
   mutex &m;
+#ifndef NO_ELISION
+  x_context;
+#endif
 
 public:
   TRANSACTIONAL_TARGET INLINE transactional_update_lock_guard(mutex &m) : m(m)
@@ -160,7 +172,7 @@ public:
     {
       if (was_elided())
         return;
-      xabort<0xff>();
+      xabort();
     }
 #endif
     m.lock_update();
