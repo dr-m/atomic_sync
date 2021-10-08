@@ -1,8 +1,10 @@
 #include "atomic_mutex.h"
+#include "atomic_condition_variable.h"
 
 #ifdef _WIN32
 #elif __cplusplus >= 202002L
 #else /* Emulate the C++20 primitives */
+# include <climits>
 # if defined __linux__
 #  include <linux/futex.h>
 #  include <unistd.h>
@@ -19,6 +21,11 @@
 # endif
 void atomic_mutex::notify_one() noexcept {FUTEX(WAKE, 1);}
 inline void atomic_mutex::wait(uint32_t old) const noexcept {FUTEX(WAIT, old);}
+
+void atomic_condition_variable::notify_one() noexcept {FUTEX(WAKE, 1);}
+void atomic_condition_variable::notify_all() noexcept {FUTEX(WAKE, INT_MAX);}
+void atomic_condition_variable::wait(uint32_t old) const noexcept
+{FUTEX(WAIT, old);}
 #endif
 
 /*

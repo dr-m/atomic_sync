@@ -1,4 +1,4 @@
-## atomic_sync: Slim mutex and rw-lock using C++ `std::atomic`
+## atomic_sync: Slim mutex, shared_mutex, condition_variable using C++ `std::atomic`
 
 C++11 (ISO/IEC 14882:2011) introduced `std::atomic`, which provides
 clearly defined semantics for concurrent memory access. The 2020
@@ -16,6 +16,8 @@ transfer of lock ownership (`lock()` and `unlock()` in different threads)
 * `atomic_shared_mutex`: A non-recursive rw-lock or
 (shared,update,exclusive) lock in 4+4 bytes that supports the transfer
 of lock ownership.
+* `atomic_condition_variable`: A condition variable in 4 bytes that
+goes with (`atomic_mutex` or `atomic_shared_mutex`).
 * `atomic_recursive_shared_mutex`: A variant of `atomic_shared_mutex`
 that supports re-entrant acquisition of U or X locks.
 
@@ -30,7 +32,7 @@ test/Debug/test_atomic_sync # Microsoft Windows
 ```
 The output of the test program should be like this:
 ```
-atomic_spin_mutex, atomic_spin_shared_lock, atomic_spin_recursive_shared_lock.
+atomic_spin_mutex, atomic_spin_shared_mutex, atomic_spin_recursive_shared_mutex.
 ```
 Note: `-DSPINLOOP` enables the use of a spin loop. If conflicts are
 not expected to be resolved quickly, it is advisable to not use spinloops and
@@ -38,7 +40,7 @@ instead let threads immediately proceed to `wait()` inside a system call.
 When compiled without that compile-time option, the output of the test program
 should be like this:
 ```
-atomic_mutex, atomic_shared_lock, atomic_recursive_shared_lock.
+atomic_mutex, atomic_shared_mutex, atomic_recursive_shared_mutex.
 ```
 
 This is based on my implementation of InnoDB rw-locks in
@@ -148,18 +150,22 @@ value of `N_ROUNDS` to 500 in the source code. The durations below are
 the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
 | invocation                  | real   | user    | system  |
 | ----------                  | -----: | ------: | ------: |
-| plain                       | 1.722s | 38.774s |  4.804s |
-| `numactl`                   | 1.169s | 16.314s |  4.436s |
-| `-DSPINLOOP=50`             | 1.814s | 41.940s |  5.648s |
-| `-DSPINLOOP=50`,`numactl`   | 1.159s | 16.172s |  4.193s |
+| plain                       | 2.500s | 49.329s |  8.597s |
+| `numactl`                   | 1.670s | 20.869s |  5.988s |
+| `-DSPINLOOP=50`             | 2.475s | 48.937s |  8.215s |
+| `-DSPINLOOP=50`,`numactl`   | 1.653s | 21.335s |  5.675s |
 
 The execution times without `numactl` vary a lot; a much longer run
 (with a larger value of `N_ROUNDS`) is advisable for performance tests.
+
+The addition of `atomic_condition_variable` tests increased the time
+spent in the operating system, because they involve much more thread
+creation and destruction.
 
 On the Intel Skylake microarchitecture, the `PAUSE` instruction
 latency was made about 10× it was on Haswell. Later microarchitectures
 reduced the latency again. That latency may affect the optimal
 spinloop count, but it is only one of many factors.
 
-October 5, 2021
+October 8, 2021
 Marko Mäkelä

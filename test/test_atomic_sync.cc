@@ -4,6 +4,7 @@
 #include "atomic_mutex.h"
 #include "atomic_shared_mutex.h"
 #include "atomic_recursive_shared_mutex.h"
+#include "atomic_condition_variable.h"
 #include "transactional_lock_guard.h"
 
 static std::atomic<bool> critical;
@@ -24,7 +25,7 @@ TRANSACTIONAL_TARGET static void test_atomic_mutex()
 {
   for (auto i = N_ROUNDS * M_ROUNDS; i--; )
   {
-    transactional_lock_guard<atomic_spin_mutex> g(m);
+    transactional_lock_guard<atomic_spin_mutex> g{m};
     transactional_assert(!critical);
     critical = true;
     critical = false;
@@ -37,6 +38,21 @@ abort:
 #endif
 }
 
+static atomic_condition_variable cv;
+
+TRANSACTIONAL_TARGET static void test_condition_variable()
+{
+  transactional_lock_guard<atomic_spin_mutex> g{m};
+  if (critical)
+    return;
+#ifndef NO_ELISION
+  if (!critical && g.was_elided())
+    xabort();
+#endif
+  while (!critical)
+    cv.wait(m);
+}
+
 static atomic_spin_shared_mutex sux;
 
 TRANSACTIONAL_TARGET static void test_shared_mutex()
@@ -44,7 +60,7 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
   for (auto i = N_ROUNDS; i--; )
   {
     {
-      transactional_lock_guard<atomic_spin_shared_mutex> g(sux);
+      transactional_lock_guard<atomic_spin_shared_mutex> g{sux};
       transactional_assert(!critical);
       critical = true;
       critical = false;
@@ -52,13 +68,13 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
 
     for (auto j = M_ROUNDS; j--; )
     {
-      transactional_shared_lock_guard<atomic_spin_shared_mutex> g(sux);
+      transactional_shared_lock_guard<atomic_spin_shared_mutex> g{sux};
       transactional_assert(!critical);
     }
 
     for (auto j = M_ROUNDS; j--; )
     {
-      transactional_update_lock_guard<atomic_spin_shared_mutex> g(sux);
+      transactional_update_lock_guard<atomic_spin_shared_mutex> g{sux};
       transactional_assert(!critical);
       if (!g.was_elided())
         sux.update_lock_upgrade();
@@ -75,6 +91,17 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
 abort:
   abort();
 #endif
+}
+
+TRANSACTIONAL_TARGET static void test_shared_condition_variable()
+{
+  transactional_shared_lock_guard<atomic_spin_shared_mutex> g{sux};
+#ifndef NO_ELISION
+  if (!critical && g.was_elided())
+    xabort();
+#endif
+  while (!critical)
+    cv.wait_shared(sux);
 }
 
 static atomic_spin_recursive_shared_mutex recursive_sux;
@@ -118,6 +145,7 @@ static void test_recursive_shared_mutex()
   }
 }
 
+TRANSACTIONAL_TARGET
 int main(int, char **)
 {
   std::thread t[N_THREADS];
@@ -135,6 +163,24 @@ int main(int, char **)
     t[i].join();
   assert(!m.is_locked_or_waiting());
 
+  for (auto j = N_ROUNDS; j--; )
+  {
+    for (auto i = N_THREADS; i--; )
+      t[i]= std::thread(test_condition_variable);
+    bool is_waiting;
+    {
+      transactional_lock_guard<atomic_spin_mutex> g{m};
+      critical = true;
+      is_waiting = cv.is_waiting();
+    }
+    if (is_waiting)
+      cv.broadcast();
+    for (auto i = N_THREADS; i--; )
+      t[i].join();
+    assert(!cv.is_waiting());
+    critical = false;
+  }
+
 #ifdef SPINLOOP
   fputs(", atomic_spin_shared_mutex", stderr);
 #else
@@ -147,6 +193,24 @@ int main(int, char **)
   for (auto i = N_THREADS; i--; )
     t[i].join();
   assert(!sux.is_locked_or_waiting());
+
+  for (auto j = N_ROUNDS; j--; )
+  {
+    for (auto i = N_THREADS; i--; )
+      t[i]= std::thread(test_shared_condition_variable);
+    bool is_waiting;
+    {
+      transactional_lock_guard<atomic_spin_shared_mutex> g{sux};
+      critical = true;
+      is_waiting = cv.is_waiting();
+    }
+    if (is_waiting)
+      cv.broadcast();
+    for (auto i = N_THREADS; i--; )
+      t[i].join();
+    assert(!cv.is_waiting());
+    critical = false;
+  }
 
 #ifdef SPINLOOP
   fputs(", atomic_spin_recursive_shared_mutex", stderr);
