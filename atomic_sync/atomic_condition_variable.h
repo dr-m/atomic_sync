@@ -28,15 +28,6 @@ class atomic_condition_variable : private std::atomic<uint32_t>
   void notify_all() noexcept;
   void wait(uint32_t old) const noexcept;
 #endif
-  bool must_notify() noexcept
-  {
-    uint32_t val = 0;
-    while (!compare_exchange_weak(val, 0, std::memory_order_release,
-                                  std::memory_order_relaxed))
-      if (!val)
-        return false;
-    return true;
-  }
 public:
   template<class mutex> void wait(mutex &m)
   {
@@ -64,7 +55,9 @@ public:
 
   bool is_waiting() const noexcept { return load(std::memory_order_acquire); }
 
-  void signal() noexcept { if (must_notify()) notify_one(); }
+  void signal() noexcept
+  { if (exchange(0, std::memory_order_release)) notify_one(); }
 
-  void broadcast() noexcept { if (must_notify()) notify_all(); }
+  void broadcast() noexcept
+  { if (exchange(0, std::memory_order_release)) notify_all(); }
 };
