@@ -19,14 +19,34 @@ The implementation counts pending wait() requests, so that signal()
 and broadcast() will only invoke notify_one() or notify_all() when
 pending requests exist. */
 
+#ifdef _WIN32
+#elif __cplusplus >= 202002L
+#else /* Emulate the C++20 primitives */
+# include <climits>
+# if defined __linux__
+#  include <linux/futex.h>
+#  include <unistd.h>
+#  include <sys/syscall.h>
+#  define FUTEX(op,n) \
+   syscall(SYS_futex, this, FUTEX_ ## op ## _PRIVATE, n, nullptr, nullptr, 0)
+# elif defined __OpenBSD__
+#  include <sys/time.h>
+#  include <sys/futex.h>
+#  define FUTEX(op,n) \
+   futex((volatile uint32_t*) this, FUTEX_ ## op, n, nullptr, nullptr)
+# else
+#  error "no C++20 nor futex support"
+# endif
+#endif
+
 class atomic_condition_variable : private std::atomic<uint32_t>
 {
 #if defined _WIN32 || __cplusplus >= 202002L
   void wait(uint32_t old) const noexcept { atomic::wait(old); }
 #else /* Emulate the C++20 primitives */
-  void notify_one() noexcept;
-  void notify_all() noexcept;
-  void wait(uint32_t old) const noexcept;
+  void notify_one() noexcept { FUTEX(WAKE, 1); }
+  void notify_all() noexcept { FUTEX(WAKE, INT_MAX); }
+  void wait(uint32_t old) const noexcept { FUTEX(WAIT, old); }
 #endif
 public:
   template<class mutex> void wait(mutex &m)
