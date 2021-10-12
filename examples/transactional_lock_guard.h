@@ -1,10 +1,6 @@
 #pragma once
 
-#if !defined __s390x__ && (defined __zarch__ || defined __SYSC_ZARCH__)
-# define __s390x__
-#endif
-
-#if defined __powerpc64__ || defined __s390x__ || defined __s390__
+#if defined __powerpc64__
 #elif defined __aarch64__ && defined __GNUC__ && __GNUC__ >= 10
 #elif defined __aarch64__ && defined __clang__ && __clang_major__ >= 10
 #elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
@@ -23,9 +19,6 @@
 # define INLINE /* nothing */
 #else
 # if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
-extern bool transactional_lock_guard_can_elide;
-#define x_context /* empty */
-
 #  include <immintrin.h>
 #  ifdef __GNUC__
 #   define TRANSACTIONAL_TARGET __attribute__((target("rtm")))
@@ -34,28 +27,32 @@ extern bool transactional_lock_guard_can_elide;
 #   define TRANSACTIONAL_TARGET /* nothing */
 #   define INLINE /* nothing */
 #  endif
+extern bool have_transactional_memory;
 
 TRANSACTIONAL_TARGET INLINE static inline bool xbegin()
 {
-  return transactional_lock_guard_can_elide && _xbegin() == _XBEGIN_STARTED;
+  return have_transactional_memory && _xbegin() == _XBEGIN_STARTED;
 }
 
 TRANSACTIONAL_TARGET INLINE static inline void xabort() { _xabort(0); }
 
 TRANSACTIONAL_TARGET INLINE static inline void xend() { _xend(); }
-# elif defined __powerpc64__ || defined __s390x__ || defined __s390__
+# elif defined __powerpc64__
 #  include <htmxlintrin.h>
-#  define TRANSACTIONAL_TARGET
-#  define INLINE /* nothing */
+#  define TRANSACTIONAL_TARGET __attribute__((target("htm")))
+#  define INLINE __attribute__((target("htm"),always_inline))
+extern bool have_transactional_memory;
 
-#define x_context TM_buff_type TM_buff
-#define xbegin() __TM_begin(TM_buff) == _HTM_TBEGIN_STARTED
+TRANSACTIONAL_INLINE static inline bool xbegin()
+{
+  return have_transactional_memory &&
+    __TM_begin(nullptr) == _HTM_TBEGIN_STARTED;
+}
 
 static inline void xabort() { __TM_abort(); }
 
 static inline void xend() { __TM_end(); }
 # elif defined __aarch64__
-#  define x_context /* empty */
 /* FIXME: No runtime detection of TME has been implemented! */
 #  define INLINE __attribute__((always_inline))
 #  ifdef __clang__
@@ -83,9 +80,6 @@ template<class mutex>
 class transactional_lock_guard
 {
   mutex &m;
-#ifndef NO_ELISION
-  x_context;
-#endif
 
 public:
   TRANSACTIONAL_TARGET INLINE transactional_lock_guard(mutex &m) : m(m)
@@ -121,7 +115,6 @@ class transactional_shared_lock_guard
 {
   mutex &m;
 #ifndef NO_ELISION
-  x_context;
   bool elided;
 #else
   static constexpr bool elided = false;
@@ -161,9 +154,6 @@ template<class mutex>
 class transactional_update_lock_guard
 {
   mutex &m;
-#ifndef NO_ELISION
-  x_context;
-#endif
 
 public:
   TRANSACTIONAL_TARGET INLINE transactional_update_lock_guard(mutex &m) : m(m)

@@ -123,8 +123,7 @@ to acquiring the lock.
 Untested code for lock elision is available for the following instruction
 set architectures:
 
-* 64-bit POWER (no detection; available starting with POWER 8)
-* IBM zSeries (S390, S390x)
+* 64-bit POWER (starting with POWER 8)
 * ARMv8 (no detection; try `-DNO_ELISION` if it crashes)
 
 ### NUMA notes
