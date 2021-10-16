@@ -1,5 +1,6 @@
 ADD_EXECUTABLE (test_atomic_sync test_atomic_sync.cc)
 ADD_EXECUTABLE (test_atomic_condition test_atomic_condition.cc)
+ADD_EXECUTABLE (test_mutex test_mutex.cc)
 FIND_PACKAGE (Threads)
 
 OPTION (WITH_SPINLOOP "Test atomic_spin_mutex, atomic_spin_shared_mutex." OFF)
@@ -18,3 +19,5 @@ TARGET_LINK_LIBRARIES (test_atomic_condition LINK_PUBLIC
   atomic_condition_variable
   ${ELISION_LIBRARY}
   Threads::Threads)
+
+TARGET_LINK_LIBRARIES (test_mutex LINK_PUBLIC atomic_mutex Threads::Threads)

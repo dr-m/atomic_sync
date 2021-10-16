@@ -34,8 +34,11 @@ cmake -DWITH_SPINLOOP=ON ..
 cmake --build .
 test/test_atomic_sync
 test/test/atomic_condition
-test/Debug/test_atomic_sync # Microsoft Windows
-test/Debug/test_atomic_condition # Microsoft Windows
+test/test_mutex 4 10000
+# Microsoft Windows:
+test/Debug/test_atomic_sync
+test/Debug/test_atomic_condition
+test/Debug/test_mutex 4 10000
 ```
 The output of the `test_atomic_sync` program should be like this:
 ```
@@ -197,3 +200,16 @@ On the Intel Skylake microarchitecture, the `PAUSE` instruction
 latency was made about 10× it was on Haswell. Later microarchitectures
 reduced the latency again. That latency may affect the optimal
 spinloop count, but it is only one of many factors.
+
+### Comparison with `std::mutex`
+
+The program `test_mutex` compares the performance of `atomic_mutex`
+and `atomic_spin_mutex` with `std::mutex`. It expects two parameters:
+the number of threads, and the number of iterations within each
+thread.  The relative performance of the implementations may vary with
+the number of concurrent threads. On a system with 4 execution cores,
+the output of a `CMAKE_BUILD_TYPE=RelWithDebInfo` build that was
+invoked as `test_mutex 4 100000` might look something like this:
+```
+atomic_mutex: 0.036838s, atomic_spin_mutex: 0.059827s, mutex: 0.073922s
+```
