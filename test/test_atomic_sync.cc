@@ -38,21 +38,6 @@ abort:
 #endif
 }
 
-static atomic_condition_variable cv;
-
-TRANSACTIONAL_TARGET static void test_condition_variable()
-{
-  transactional_lock_guard<atomic_spin_mutex> g{m};
-  if (critical)
-    return;
-#ifdef WITH_ELISION
-  if (!critical && g.was_elided())
-    xabort();
-#endif
-  while (!critical)
-    cv.wait(m);
-}
-
 static atomic_spin_shared_mutex sux;
 
 TRANSACTIONAL_TARGET static void test_shared_mutex()
@@ -91,17 +76,6 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
 abort:
   abort();
 #endif
-}
-
-TRANSACTIONAL_TARGET static void test_shared_condition_variable()
-{
-  transactional_shared_lock_guard<atomic_spin_shared_mutex> g{sux};
-#ifdef WITH_ELISION
-  if (!critical && g.was_elided())
-    xabort();
-#endif
-  while (!critical)
-    cv.wait_shared(sux);
 }
 
 static atomic_spin_recursive_shared_mutex recursive_sux;
@@ -168,24 +142,6 @@ int main(int, char **)
     t[i].join();
   assert(!m.is_locked_or_waiting());
 
-  for (auto j = N_ROUNDS; j--; )
-  {
-    for (auto i = N_THREADS; i--; )
-      t[i]= std::thread(test_condition_variable);
-    bool is_waiting;
-    {
-      transactional_lock_guard<atomic_spin_mutex> g{m};
-      critical = true;
-      is_waiting = cv.is_waiting();
-    }
-    if (is_waiting)
-      cv.broadcast();
-    for (auto i = N_THREADS; i--; )
-      t[i].join();
-    assert(!cv.is_waiting());
-    critical = false;
-  }
-
 #ifdef SPINLOOP
   fputs(", atomic_spin_shared_mutex", stderr);
 #else
@@ -198,24 +154,6 @@ int main(int, char **)
   for (auto i = N_THREADS; i--; )
     t[i].join();
   assert(!sux.is_locked_or_waiting());
-
-  for (auto j = N_ROUNDS; j--; )
-  {
-    for (auto i = N_THREADS; i--; )
-      t[i]= std::thread(test_shared_condition_variable);
-    bool is_waiting;
-    {
-      transactional_lock_guard<atomic_spin_shared_mutex> g{sux};
-      critical = true;
-      is_waiting = cv.is_waiting();
-    }
-    if (is_waiting)
-      cv.broadcast();
-    for (auto i = N_THREADS; i--; )
-      t[i].join();
-    assert(!cv.is_waiting());
-    critical = false;
-  }
 
 #ifdef SPINLOOP
   fputs(", atomic_spin_recursive_shared_mutex", stderr);

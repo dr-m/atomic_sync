@@ -1,10 +1,10 @@
-## atomic_sync: Slim mutex, shared_mutex, condition_variable using C++ `std::atomic`
+## atomic_sync: Slim `mutex` and `shared_mutex` using C++ `std::atomic`
 
 C++11 (ISO/IEC 14882:2011) introduced `std::atomic`, which provides
 clearly defined semantics for concurrent memory access. The 2020
 version of the standard (C++20) extended it further with `wait()` and
 `notify_one()`, which allows the implementation of blocking
-operations, such as mutex acquisition.
+operations, such as lock acquisition.
 
 In environments where the `futex` system call is available,
 `std::atomic::wait()` and `std::atomic::notify_one()` can be
@@ -16,10 +16,15 @@ transfer of lock ownership (`lock()` and `unlock()` in different threads)
 * `atomic_shared_mutex`: A non-recursive rw-lock or
 (shared,update,exclusive) lock in 4+4 bytes that supports the transfer
 of lock ownership.
+
+Some examples of extending or using the primitives are provided:
 * `atomic_condition_variable`: A condition variable in 4 bytes that
 goes with (`atomic_mutex` or `atomic_shared_mutex`).
 * `atomic_recursive_shared_mutex`: A variant of `atomic_shared_mutex`
 that supports re-entrant acquisition of U or X locks.
+* `transactional_lock_guard`, `transactional_shared_lock_guard`:
+Similar to `std::lock_guard` and `std::shared_lock_guard`, but with
+optional support for lock elision using transactional memory.
 
 You can try it out as follows:
 ```sh
@@ -28,9 +33,11 @@ cd build
 cmake -DSPINLOOP=50 ..
 cmake --build .
 test/test_atomic_sync
+test/test/atomic_condition
 test/Debug/test_atomic_sync # Microsoft Windows
+test/Debug/test_atomic_condition # Microsoft Windows
 ```
-The output of the test program should be like this:
+The output of the `test_atomic_sync` program should be like this:
 ```
 atomic_spin_mutex, atomic_spin_shared_mutex, atomic_spin_recursive_shared_mutex.
 ```
@@ -112,9 +119,10 @@ Intel Restricted Transactional Memory (RTM).
 You may want to check the statistics:
 ```sh
 perf record -g -e tx-abort test/test_atomic_sync
+perf record -g -e tx-abort test/test_atomic_condition
 ```
-In this test, lock elision is detrimental for performance, because locking
-conflicts make transaction aborts and re-execution extremely common.
+In `test_atomic_sync`, lock elision is detrimental for performance, because
+lock conflicts make transaction aborts and re-execution extremely common.
 
 The elision is very simple, not even implementing any retry mechanism.
 If the lock cannot be elided on the first attempt, we will fall back
@@ -141,24 +149,20 @@ time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
 ```
 The `numactl` command would bind the process to one NUMA node (CPU package)
 in order to avoid shipping cache lines between NUMA nodes.
-The smallest difference between plain and `numactl` that I achieved was
-with `-DSPINLOOP=50`.
+The smallest difference between plain and `numactl` that I achieved
+at one point was with `-DSPINLOOP=50`.
 For more stable times, I temporarily changed the
 value of `N_ROUNDS` to 500 in the source code. The durations below are
 the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
 | invocation                  | real   | user    | system  |
 | ----------                  | -----: | ------: | ------: |
-| plain (`-DSPINLOOP=0`)      | 2.500s | 49.329s |  8.597s |
-| `numactl` (`-DSPINLOOP=0`)  | 1.670s | 20.869s |  5.988s |
-| `-DSPINLOOP=50`             | 2.475s | 48.937s |  8.215s |
-| `-DSPINLOOP=50`,`numactl`   | 1.653s | 21.335s |  5.675s |
+| plain (`-DSPINLOOP=0`)      | 1.763s | 40.973s |  5.382s |
+| `numactl` (`-DSPINLOOP=0`)  | 1.169s | 15.563s |  4.060s |
+| `-DSPINLOOP=50`             | 1.798s | 42.000s |  5.191s |
+| `-DSPINLOOP=50`,`numactl`   | 1.168s | 15.810s |  4.089s |
 
 The execution times without `numactl` vary a lot; a much longer run
 (with a larger value of `N_ROUNDS`) is advisable for performance tests.
-
-The addition of `atomic_condition_variable` tests increased the time
-spent in the operating system, because they involve much more thread
-creation and destruction.
 
 On the Intel Skylake microarchitecture, the `PAUSE` instruction
 latency was made about 10× it was on Haswell. Later microarchitectures

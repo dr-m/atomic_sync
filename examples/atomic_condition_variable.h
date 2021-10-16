@@ -9,6 +9,9 @@ The interface intentionally resembles std::condition_variable.
 In addition to wait(), we also define wait_shared() and wait_update(),
 to go with atomic_shared_mutex.
 
+A straightforward implementation of wait_until() would require the
+existence of std::atomic::wait_until().
+
 We define the predicate is_waiting().
 
 There is no explicit constructor or destructor.
