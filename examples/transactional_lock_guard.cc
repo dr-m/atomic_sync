@@ -1,6 +1,9 @@
+#ifndef WITH_ELISION
+# error /* This module is for the runtime detection of transactional memory */
+#endif
+
 #include "transactional_lock_guard.h"
-#ifdef NO_ELISION
-#elif defined __powerpc64__
+#if defined __powerpc64__
 # ifdef __linux__
 #  include <sys/auxv.h>
 
@@ -21,6 +24,9 @@ static bool can_elide()
 # ifdef __linux__
   return getauxval(AT_HWCAP2) &
     (PPC_FEATURE2_HTM_NOSC | PPC_FEATURE2_HTM_NO_SUSPEND);
+# else
+  /* FIXME: implement runtime detection */
+  return true;
 # endif
 }
 

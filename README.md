@@ -104,8 +104,8 @@ run time, it should be equivalent to `std::lock_guard`.
 The `transactional_shared_lock_guard` and `transactional_update_lock_guard`
 are for the two non-exclusive modes of `atomic_shared_mutex`.
 
-The lock elision may be disabled by specifying
-`-DCMAKE_CXX_FLAGS=-DNO_ELISION`.
+The lock elision may be enabled by specifying
+`cmake -DWITH_ELISION=ON`.
 
 Currently, lock elision has been only tested with
 Intel Restricted Transactional Memory (RTM).
@@ -123,8 +123,8 @@ to acquiring the lock.
 Untested code for lock elision is available for the following instruction
 set architectures:
 
-* 64-bit POWER (starting with POWER 8)
-* ARMv8 (no detection; try `-DNO_ELISION` if it crashes)
+* POWER starting with v2.09 (POWER 8); run-time detection on Linux only
+* ARMv8+tme (no run-time detection)
 
 ### NUMA notes
 
@@ -134,8 +134,7 @@ as follows:
 ```sh
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-13 \
--DCMAKE_CXX_FLAGS=-DNO_ELISION ..
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-13 ..
 cmake --build .
 time test/test_atomic_sync
 time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
@@ -143,7 +142,7 @@ time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
 The `numactl` command would bind the process to one NUMA node (CPU package)
 in order to avoid shipping cache lines between NUMA nodes.
 The smallest difference between plain and `numactl` that I achieved was
-with `-DCMAKE_CXX_FLAGS='-DNO_ELISION -DSPINLOOP=50'`.
+with `-DCMAKE_CXX_FLAGS='-DSPINLOOP=50'`.
 For more stable times, I temporarily changed the
 value of `N_ROUNDS` to 500 in the source code. The durations below are
 the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
@@ -165,6 +164,3 @@ On the Intel Skylake microarchitecture, the `PAUSE` instruction
 latency was made about 10× it was on Haswell. Later microarchitectures
 reduced the latency again. That latency may affect the optimal
 spinloop count, but it is only one of many factors.
-
-October 8, 2021
-Marko Mäkelä

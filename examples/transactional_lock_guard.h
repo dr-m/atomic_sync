@@ -1,46 +1,38 @@
 #pragma once
 
-#if defined __powerpc64__
+#ifndef WITH_ELISION
+#elif defined __powerpc64__
 #elif defined __aarch64__ && defined __GNUC__ && __GNUC__ >= 10
 #elif defined __aarch64__ && defined __clang__ && __clang_major__ >= 10
 #elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
 #elif defined __GNUC__ && (defined __i386__ || defined __x86_64__)
-# if __GNUC__ >= 8
-# elif defined __clang__ && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang__minor >= 8))
-# else
-#  define NO_ELISION
-# endif
-#else /* Transactional memory has not been implemented for this ISA */
-# define NO_ELISION
+#else
+# error /* Transactional memory has not been implemented for this ISA */
 #endif
 
-#ifdef NO_ELISION
+#ifndef WITH_ELISION
 # define TRANSACTIONAL_TARGET /* nothing */
-# define INLINE /* nothing */
+# define TRANSACTIONAL_INLINE /* nothing */
 #else
 # if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
+extern bool have_transactional_memory;
 #  include <immintrin.h>
 #  ifdef __GNUC__
 #   define TRANSACTIONAL_TARGET __attribute__((target("rtm")))
-#   define INLINE __attribute__((always_inline))
+#   define TRANSACTIONAL_INLINE __attribute__((target("rtm"),always_inline))
 #  else
 #   define TRANSACTIONAL_TARGET /* nothing */
-#   define INLINE /* nothing */
+#   define TRANSACTIONAL_INLINE /* nothing */
 #  endif
-extern bool have_transactional_memory;
 
-TRANSACTIONAL_TARGET INLINE static inline bool xbegin()
-{
-  return have_transactional_memory && _xbegin() == _XBEGIN_STARTED;
-}
-
-TRANSACTIONAL_TARGET INLINE static inline void xabort() { _xabort(0); }
-
-TRANSACTIONAL_TARGET INLINE static inline void xend() { _xend(); }
+TRANSACTIONAL_INLINE static inline bool xbegin()
+{ return have_transactional_memory && _xbegin() == _XBEGIN_STARTED; }
+TRANSACTIONAL_INLINE static inline void xabort() { _xabort(0); }
+TRANSACTIONAL_INLINE static inline void xend() { _xend(); }
 # elif defined __powerpc64__
 #  include <htmxlintrin.h>
 #  define TRANSACTIONAL_TARGET __attribute__((target("htm")))
-#  define INLINE __attribute__((target("htm"),always_inline))
+#  define TRANSACTIONAL_INLINE __attribute__((target("htm"),always_inline))
 extern bool have_transactional_memory;
 
 TRANSACTIONAL_INLINE static inline bool xbegin()
@@ -48,30 +40,30 @@ TRANSACTIONAL_INLINE static inline bool xbegin()
   return have_transactional_memory &&
     __TM_begin(nullptr) == _HTM_TBEGIN_STARTED;
 }
-
 static inline void xabort() { __TM_abort(); }
-
 static inline void xend() { __TM_end(); }
 # elif defined __aarch64__
 /* FIXME: No runtime detection of TME has been implemented! */
-#  define INLINE __attribute__((always_inline))
+constexpr bool have_transactional_memory = true;
+
+#  define TRANSACTIONAL_INLINE __attribute__((always_inline))
 #  ifdef __clang__
 #   define TRANSACTIONAL_TARGET __attribute__((target("tme")))
 #  else
 #   define TRANSACTIONAL_TARGET __attribute__((target("+tme")))
 #  endif
 
-TRANSACTIONAL_TARGET INLINE static inline bool xbegin()
+TRANSACTIONAL_INLINE static inline bool xbegin()
 {
   int ret;
   __asm__ __volatile__ ("tstart %x0" : "=r"(ret) :: "memory");
   return !ret;
 }
 
-TRANSACTIONAL_TARGET INLINE static inline void xabort()
+TRANSACTIONAL_INLINE static inline void xabort()
 { __asm__ __volatile__ ("tcancel %x0" :: "n"(i) :: "memory"); }
 
-TRANSACTIONAL_TARGET INLINE static inline void xend()
+TRANSACTIONAL_INLINE static inline void xend()
 { __asm__ volatile ("tcommit" ::: "memory"); }
 # endif
 #endif
@@ -82,9 +74,9 @@ class transactional_lock_guard
   mutex &m;
 
 public:
-  TRANSACTIONAL_TARGET INLINE transactional_lock_guard(mutex &m) : m(m)
+  TRANSACTIONAL_INLINE transactional_lock_guard(mutex &m) : m(m)
   {
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
     if (xbegin())
     {
       if (was_elided())
@@ -95,15 +87,15 @@ public:
     m.lock();
   }
   transactional_lock_guard(const transactional_lock_guard &) = delete;
-  TRANSACTIONAL_TARGET INLINE ~transactional_lock_guard()
+  TRANSACTIONAL_INLINE ~transactional_lock_guard()
   {
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
     if (was_elided()) xend(); else
 #endif
     m.unlock();
   }
 
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
   bool was_elided() const noexcept { return !m.is_locked_or_waiting(); }
 #else
   bool was_elided() const noexcept { return false; }
@@ -114,16 +106,16 @@ template<class mutex>
 class transactional_shared_lock_guard
 {
   mutex &m;
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
   bool elided;
 #else
   static constexpr bool elided = false;
 #endif
 
 public:
-  TRANSACTIONAL_TARGET INLINE transactional_shared_lock_guard(mutex &m) : m(m)
+  TRANSACTIONAL_INLINE transactional_shared_lock_guard(mutex &m) : m(m)
   {
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
     if (xbegin())
     {
       if (!m.is_locked())
@@ -139,9 +131,9 @@ public:
   }
   transactional_shared_lock_guard(const transactional_shared_lock_guard &) =
     delete;
-  TRANSACTIONAL_TARGET INLINE ~transactional_shared_lock_guard()
+  TRANSACTIONAL_INLINE ~transactional_shared_lock_guard()
   {
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
     if (was_elided()) xend(); else
 #endif
     m.unlock_shared();
@@ -156,9 +148,9 @@ class transactional_update_lock_guard
   mutex &m;
 
 public:
-  TRANSACTIONAL_TARGET INLINE transactional_update_lock_guard(mutex &m) : m(m)
+  TRANSACTIONAL_INLINE transactional_update_lock_guard(mutex &m) : m(m)
   {
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
     if (xbegin())
     {
       if (was_elided())
@@ -170,15 +162,15 @@ public:
   }
   transactional_update_lock_guard(const transactional_update_lock_guard &) =
     delete;
-  TRANSACTIONAL_TARGET INLINE ~transactional_update_lock_guard()
+  TRANSACTIONAL_INLINE ~transactional_update_lock_guard()
   {
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
     if (was_elided()) xend(); else
 #endif
     m.unlock_update();
   }
 
-#ifdef NO_ELISION
+#ifdef WITH_ELISION
   bool was_elided() const noexcept { return !m.is_locked_or_waiting(); }
 #else
   bool was_elided() const noexcept { return false; }

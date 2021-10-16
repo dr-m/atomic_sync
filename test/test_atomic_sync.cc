@@ -15,7 +15,7 @@ constexpr unsigned M_ROUNDS = 100;
 
 static atomic_spin_mutex m;
 
-#if defined NO_ELISION || defined NDEBUG
+#if !defined WITH_ELISION || defined NDEBUG
 # define transactional_assert(x) assert(x)
 #else
 # define transactional_assert(x) if (!x) goto abort;
@@ -30,7 +30,7 @@ TRANSACTIONAL_TARGET static void test_atomic_mutex()
     critical = true;
     critical = false;
   }
-#if defined NO_ELISION || defined NDEBUG
+#if !defined WITH_ELISION || defined NDEBUG
 #else
   return;
 abort:
@@ -45,7 +45,7 @@ TRANSACTIONAL_TARGET static void test_condition_variable()
   transactional_lock_guard<atomic_spin_mutex> g{m};
   if (critical)
     return;
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
   if (!critical && g.was_elided())
     xabort();
 #endif
@@ -85,7 +85,7 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
         sux.lock_update_downgrade();
     }
   }
-#if defined NO_ELISION || defined NDEBUG
+#if !defined WITH_ELISION || defined NDEBUG
 #else
   return;
 abort:
@@ -96,7 +96,7 @@ abort:
 TRANSACTIONAL_TARGET static void test_shared_condition_variable()
 {
   transactional_shared_lock_guard<atomic_spin_shared_mutex> g{sux};
-#ifndef NO_ELISION
+#ifdef WITH_ELISION
   if (!critical && g.was_elided())
     xabort();
 #endif
@@ -149,6 +149,11 @@ TRANSACTIONAL_TARGET
 int main(int, char **)
 {
   std::thread t[N_THREADS];
+
+#ifdef WITH_ELISION
+  fputs(have_transactional_memory ? "transactional " : "non-transactional ",
+        stderr);
+#endif
 
 #ifdef SPINLOOP
   fputs("atomic_spin_mutex", stderr);
