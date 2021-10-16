@@ -36,7 +36,6 @@ We define spin_lock(), spin_lock_shared(), and spin_lock_update(),
 which are like lock(), lock_shared(), lock_update(), but with an
 initial spinloop.
 
-There is no explicit constructor or destructor.
 The object is expected to be zero-initialized, so that
 !is_locked_or_waiting() will hold.
 
@@ -97,6 +96,13 @@ class atomic_shared_mutex : std::atomic<uint32_t>
   }
 
 public:
+  /** Default constructor */
+  constexpr atomic_shared_mutex() : std::atomic<uint32_t>(0), ex() {}
+  /** No copy constructor */
+  atomic_shared_mutex(const atomic_mutex&) = delete;
+  /** No assignment operator */
+  atomic_shared_mutex& operator=(const atomic_shared_mutex&) = delete;
+
   /** @return whether an exclusive lock is being held or waited for */
   bool is_waiting() const noexcept
   { return (load(std::memory_order_acquire) & X) != 0; }

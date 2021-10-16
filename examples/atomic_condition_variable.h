@@ -52,6 +52,14 @@ class atomic_condition_variable : private std::atomic<uint32_t>
   void wait(uint32_t old) const noexcept { FUTEX(WAIT, old); }
 #endif
 public:
+  /** Default constructor */
+  constexpr atomic_condition_variable() : std::atomic<uint32_t>(0) {}
+  /** No copy constructor */
+  atomic_condition_variable(const atomic_condition_variable&) = delete;
+  /** No assignment operator */
+  atomic_condition_variable& operator=(const atomic_condition_variable&) =
+    delete;
+
   template<class mutex> void wait(mutex &m)
   {
     const uint32_t val = fetch_add(1, std::memory_order_acquire);

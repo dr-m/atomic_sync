@@ -10,7 +10,7 @@ In environments where the `futex` system call is available,
 `std::atomic::wait()` and `std::atomic::notify_one()` can be
 implemented by `futex`. Examples for Linux and OpenBSD are included.
 
-This project defines the following synchronization primitives:
+This project defines the following zero-initialized synchronization primitives:
 * `atomic_mutex`: A non-recursive mutex in 4 bytes that supports the
 transfer of lock ownership (`lock()` and `unlock()` in different threads)
 * `atomic_shared_mutex`: A non-recursive rw-lock or

@@ -11,7 +11,6 @@ We define the predicates is_locked_or_waiting() and is_locked().
 
 We define spin_lock(), which is like lock(), but with an initial spinloop.
 
-There is no explicit constructor or destructor.
 The object is expected to be zero-initialized, so that
 !is_locked_or_waiting() will hold.
 
@@ -32,6 +31,13 @@ class atomic_mutex : std::atomic<uint32_t>
   /** Wait until the mutex has been acquired */
   void wait_and_lock() noexcept;
 public:
+  /** Default constructor */
+  constexpr atomic_mutex() : std::atomic<uint32_t>(0) {}
+  /** No copy constructor */
+  atomic_mutex(const atomic_mutex&) = delete;
+  /** No assignment operator */
+  atomic_mutex& operator=(const atomic_mutex&) = delete;
+
   /** @return whether the mutex is being held or waited for */
   bool is_locked_or_waiting() const
   { return load(std::memory_order_acquire) != 0; }
