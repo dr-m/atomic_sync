@@ -25,7 +25,7 @@ You can try it out as follows:
 ```sh
 mkdir build
 cd build
-cmake -DCMAKE_CXX_FLAGS=-DSPINLOOP=50 ..
+cmake -DSPINLOOP=50 ..
 cmake --build .
 test/test_atomic_sync
 test/Debug/test_atomic_sync # Microsoft Windows
@@ -142,14 +142,14 @@ time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
 The `numactl` command would bind the process to one NUMA node (CPU package)
 in order to avoid shipping cache lines between NUMA nodes.
 The smallest difference between plain and `numactl` that I achieved was
-with `-DCMAKE_CXX_FLAGS='-DSPINLOOP=50'`.
+with `-DSPINLOOP=50`.
 For more stable times, I temporarily changed the
 value of `N_ROUNDS` to 500 in the source code. The durations below are
 the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
 | invocation                  | real   | user    | system  |
 | ----------                  | -----: | ------: | ------: |
-| plain                       | 2.500s | 49.329s |  8.597s |
-| `numactl`                   | 1.670s | 20.869s |  5.988s |
+| plain (`-DSPINLOOP=0`)      | 2.500s | 49.329s |  8.597s |
+| `numactl` (`-DSPINLOOP=0`)  | 1.670s | 20.869s |  5.988s |
 | `-DSPINLOOP=50`             | 2.475s | 48.937s |  8.215s |
 | `-DSPINLOOP=50`,`numactl`   | 1.653s | 21.335s |  5.675s |
 
