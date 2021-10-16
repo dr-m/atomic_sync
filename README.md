@@ -213,3 +213,9 @@ invoked as `test_mutex 4 100000` might look something like this:
 ```
 atomic_mutex: 0.036838s, atomic_spin_mutex: 0.059827s, mutex: 0.073922s
 ```
+On a Raspberry Pi 2 (4 execution cores that implement the ARMv7 ISA),
+the output of `test_mutex 8 100000` nicely illustrates the usefulness of
+spinloops:
+```
+atomic_mutex: 0.411457s, atomic_spin_mutex: 0.218578s, mutex: 0.435057s
+```

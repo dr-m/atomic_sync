@@ -2,9 +2,14 @@ CMAKE_MINIMUM_REQUIRED (VERSION 3.1)
 
 PROJECT (atomic_sync)
 
-SET (CMAKE_CXX_STANDARD 20)
+IF (CMAKE_VERSION VERSION_GREATER_EQUAL 3.8)
+  SET (CMAKE_CXX_STANDARD 20)
+ELSE()
+  SET (CMAKE_CXX_STANDARD 11)
+ENDIF()
 
-IF (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+IF (CMAKE_CXX_STANDARD GREATER_EQUAL 20 AND
+    CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # On Debian GNU/Linux, Clang only supports std::atomic::wait()
   # if it is defined in the GCC libstdc++ headers, that is,
   # if libstdc++-11-dev or g++-11 or a later version is installed.

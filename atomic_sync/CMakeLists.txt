@@ -10,5 +10,7 @@ TARGET_INCLUDE_DIRECTORIES (atomic_shared_mutex PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR})
 TARGET_LINK_LIBRARIES (atomic_shared_mutex LINK_PUBLIC atomic_mutex)
 
-TARGET_COMPILE_FEATURES (atomic_mutex PUBLIC cxx_std_11)
-TARGET_COMPILE_FEATURES (atomic_shared_mutex PUBLIC cxx_std_11)
+IF (CMAKE_CXX_STANDARD GREATER_EQUAL 20)
+  TARGET_COMPILE_FEATURES (atomic_mutex PUBLIC cxx_std_11)
+  TARGET_COMPILE_FEATURES (atomic_shared_mutex PUBLIC cxx_std_11)
+ENDIF()
