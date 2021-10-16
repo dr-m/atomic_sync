@@ -115,12 +115,25 @@ run time, it should be equivalent to `std::lock_guard`.
 The `transactional_shared_lock_guard` and `transactional_update_lock_guard`
 are for the two non-exclusive modes of `atomic_shared_mutex`.
 
-The lock elision may be enabled by specifying
-`cmake -DWITH_ELISION=ON`.
+Lock elision may be enabled by specifying `cmake -DWITH_ELISION=ON`.
+If transactional memory is supported, `test_atomic_sync` and
+`test_atomic_condition` will output the following:
+```
+transactional atomic_mutex, atomic_shared_mutex, atomic_recursive_shared_mutex.
+condition variables with transactional atomic_mutex, atomic_shared_mutex.
+```
+If support for transaction memory was not detected, the output will
+say `non-transactional` instead of `transactional`.
 
-Currently, lock elision has been only tested with
-Intel Restricted Transactional Memory (RTM).
-You may want to check the statistics:
+#### Intel TSX-NI, or Restricted Transactional Memory (RTM)
+
+Intel Transactional Synchronization Extensions New Instructions (TSX-NI)
+for IA-32 and AMD64 enable access to Restricted Transactional Memory (RTM)
+operations. The instructions are is available on some higher-end Intel
+processors that implement the IA-32 or AMD64 ISA. RTM is currently not
+available on processors manufactured by AMD.
+
+You may want to check some performance statistics.
 ```sh
 perf record -g -e tx-abort test/test_atomic_sync
 perf record -g -e tx-abort test/test_atomic_condition
@@ -132,11 +145,23 @@ The elision is very simple, not even implementing any retry mechanism.
 If the lock cannot be elided on the first attempt, we will fall back
 to acquiring the lock.
 
-Untested code for lock elision is available for the following instruction
-set architectures:
+#### POWER v2.09 Hardware Trace Monitor (HTM)
 
-* POWER starting with v2.09 (POWER 8); run-time detection on Linux only
-* ARMv8+tme (no run-time detection)
+Run-time detection has been implemented on Linux only.
+
+When compiling the code with GCC 4.8.5, you will have to specify
+`-DCMAKE_CXX_FLAGS=-mhtm`.
+
+Run-time detection may depend on a recent enough version of Linux.
+
+The implementation may be broken.
+
+#### ARMv8 Transactional Memory Extension (TME)
+
+No interface for run-time detection appears to have been published
+yet. Only an inline assembler interface appears to be available,
+starting with GCC 10 and clang 10. It is not known yet which
+implementations of ARMv8 or ARMv9 would support this.
 
 ### NUMA notes
 
