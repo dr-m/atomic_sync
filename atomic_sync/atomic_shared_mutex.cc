@@ -18,22 +18,12 @@
 # else
 #  error "no C++20 nor futex support"
 # endif
-template<typename mutex>
-void atomic_shared_mutex_impl<mutex>::notify_one() noexcept
-{ FUTEX(WAKE, 1); }
-template<typename mutex>
-inline void atomic_shared_mutex_impl<mutex>::wait(uint32_t old) const noexcept
+void atomic_shared_mutex::notify_one() noexcept { FUTEX(WAKE, 1); }
+inline void atomic_shared_mutex::wait(uint32_t old) const noexcept
 { FUTEX(WAIT, old); }
-template
-void atomic_shared_mutex_impl<atomic_mutex>::notify_one() noexcept;
-# ifdef SPINLOOP
-template
-void atomic_shared_mutex_impl<atomic_spin_mutex>::notify_one() noexcept;
-# endif
 #endif
 
-template<typename mutex>
-void atomic_shared_mutex_impl<mutex>::lock_wait(uint32_t lk) noexcept
+void atomic_shared_mutex::lock_wait(uint32_t lk) noexcept
 {
   assert(ex.is_locked());
   assert(lk);
@@ -48,26 +38,26 @@ void atomic_shared_mutex_impl<mutex>::lock_wait(uint32_t lk) noexcept
   while (lk != X);
 }
 
-template<typename mutex>
-void atomic_shared_mutex_impl<mutex>::shared_lock_wait() noexcept
+void atomic_shared_mutex::shared_lock_wait() noexcept
 {
   for (;;)
   {
     ex.lock();
-    bool acquired= try_lock_shared();
+    bool acquired = try_lock_shared();
     ex.unlock();
     if (acquired)
       break;
   }
 }
 
-template
-void atomic_shared_mutex_impl<atomic_mutex>::lock_wait(uint32_t) noexcept;
-template
-void atomic_shared_mutex_impl<atomic_mutex>::shared_lock_wait() noexcept;
-#ifdef SPINLOOP
-template
-void atomic_shared_mutex_impl<atomic_spin_mutex>::lock_wait(uint32_t) noexcept;
-template
-void atomic_shared_mutex_impl<atomic_spin_mutex>::shared_lock_wait() noexcept;
-#endif
+void atomic_shared_mutex::spin_shared_lock_wait() noexcept
+{
+  for (;;)
+  {
+    ex.spin_lock();
+    bool acquired = try_lock_shared();
+    ex.unlock();
+    if (acquired)
+      break;
+  }
+}

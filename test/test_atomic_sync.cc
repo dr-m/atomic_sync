@@ -13,6 +13,14 @@ constexpr unsigned N_THREADS = 30;
 constexpr unsigned N_ROUNDS = 100;
 constexpr unsigned M_ROUNDS = 100;
 
+#ifdef WITH_SPINLOOP
+# define ATOMIC_MUTEX_NAME(m) "atomic_spin_" #m
+#else
+# define ATOMIC_MUTEX_NAME(m) "atomic_" #m
+# define atomic_spin_mutex atomic_mutex
+# define atomic_spin_shared_mutex atomic_shared_mutex
+# define atomic_spin_recursive_shared_mutex atomic_recursive_shared_mutex
+#endif
 static atomic_spin_mutex m;
 
 #if !defined WITH_ELISION || defined NDEBUG
@@ -125,14 +133,12 @@ int main(int, char **)
   std::thread t[N_THREADS];
 
 #ifdef WITH_ELISION
-  fputs(have_transactional_memory ? "transactional " : "non-transactional ",
+  fputs(have_transactional_memory
+        ? "transactional " ATOMIC_MUTEX_NAME(mutex)
+        : "non-transactional " ATOMIC_MUTEX_NAME(mutex),
         stderr);
-#endif
-
-#ifdef SPINLOOP
-  fputs("atomic_spin_mutex", stderr);
 #else
-  fputs("atomic_mutex", stderr);
+  fputs(ATOMIC_MUTEX_NAME(mutex), stderr);
 #endif
 
   assert(!m.is_locked_or_waiting());
@@ -142,11 +148,7 @@ int main(int, char **)
     t[i].join();
   assert(!m.is_locked_or_waiting());
 
-#ifdef SPINLOOP
-  fputs(", atomic_spin_shared_mutex", stderr);
-#else
-  fputs(", atomic_shared_mutex", stderr);
-#endif
+  fputs(", " ATOMIC_MUTEX_NAME(shared_mutex), stderr);
 
   assert(!sux.is_locked_or_waiting());
   for (auto i = N_THREADS; i--; )
@@ -155,11 +157,7 @@ int main(int, char **)
     t[i].join();
   assert(!sux.is_locked_or_waiting());
 
-#ifdef SPINLOOP
-  fputs(", atomic_spin_recursive_shared_mutex", stderr);
-#else
-  fputs(", atomic_recursive_shared_mutex", stderr);
-#endif
+  fputs(", " ATOMIC_MUTEX_NAME(recursive_shared_mutex), stderr);
 
   recursive_sux.init();
   for (auto i = N_THREADS; i--; )

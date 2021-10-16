@@ -1,8 +1,7 @@
 #include "atomic_mutex.h"
 
-#ifdef _WIN32
-#elif __cplusplus >= 202002L
-#else /* Emulate the C++20 primitives */
+#if !defined _WIN32 && __cplusplus < 202002L
+/* Emulate the C++20 primitives */
 # include <climits>
 # if defined __linux__
 #  include <linux/futex.h>
@@ -86,15 +85,17 @@ void atomic_mutex::wait_and_lock() noexcept
   }
 }
 
-#ifdef SPINLOOP
+#ifndef SPINLOOP
+void atomic_mutex::spin_wait_and_lock() noexcept { wait_and_lock(); }
+#else
 /** The count of 50 seems to yield the best NUMA performance on
 Intel Xeon E5-2630 v4 (Haswell microarchitecture) */
-unsigned atomic_spin_mutex::spin_rounds = SPINLOOP;
+unsigned atomic_mutex::spin_rounds = SPINLOOP;
 # ifdef _WIN32
 #  include <windows.h>
 # endif
 
-void atomic_spin_mutex::wait_and_lock() noexcept
+void atomic_mutex::spin_wait_and_lock() noexcept
 {
   uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);
 

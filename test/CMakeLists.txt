@@ -2,6 +2,11 @@ ADD_EXECUTABLE (test_atomic_sync test_atomic_sync.cc)
 ADD_EXECUTABLE (test_atomic_condition test_atomic_condition.cc)
 FIND_PACKAGE (Threads)
 
+OPTION (WITH_SPINLOOP "Test atomic_spin_mutex, atomic_spin_shared_mutex." OFF)
+IF (WITH_SPINLOOP)
+  TARGET_COMPILE_DEFINITIONS (test_atomic_sync PRIVATE WITH_SPINLOOP)
+ENDIF ()
+
 TARGET_LINK_LIBRARIES (test_atomic_sync LINK_PUBLIC
   atomic_mutex atomic_shared_mutex
   atomic_recursive_shared_mutex

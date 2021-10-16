@@ -30,7 +30,7 @@ You can try it out as follows:
 ```sh
 mkdir build
 cd build
-cmake -DSPINLOOP=50 ..
+cmake -DWITH_SPINLOOP=ON ..
 cmake --build .
 test/test_atomic_sync
 test/test/atomic_condition
@@ -41,10 +41,14 @@ The output of the `test_atomic_sync` program should be like this:
 ```
 atomic_spin_mutex, atomic_spin_shared_mutex, atomic_spin_recursive_shared_mutex.
 ```
-Note: `-DSPINLOOP` enables the use of a spin loop. If conflicts are
-not expected to be resolved quickly, it is advisable to not use spinloops and
-instead let threads immediately proceed to `wait()` inside a system call.
-When compiled without that compile-time option, the output of the test program
+Note: `-DSPINLOOP=0` (or anything else than a positive integer)
+disables any use of spin loops in the implementation.
+
+The build option `-DWITH_SPINLOOP=ON` makes `test_atomic_sync` request
+that spinloops be used. If conflicts are not expected to be resolved
+quickly, it is advisable to not use spinloops and instead let threads
+immediately proceed to `wait()` inside a system call. When compiled
+`-DWITH_SPINLOOP=OFF`, the output of the `test_atomic_sync`
 should be like this:
 ```
 atomic_mutex, atomic_shared_mutex, atomic_recursive_shared_mutex.
@@ -150,16 +154,16 @@ time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
 The `numactl` command would bind the process to one NUMA node (CPU package)
 in order to avoid shipping cache lines between NUMA nodes.
 The smallest difference between plain and `numactl` that I achieved
-at one point was with `-DSPINLOOP=50`.
+at one point was with `-DSPINLOOP=50` (which is the default).
 For more stable times, I temporarily changed the
 value of `N_ROUNDS` to 500 in the source code. The durations below are
 the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
-| invocation                  | real   | user    | system  |
-| ----------                  | -----: | ------: | ------: |
-| plain (`-DSPINLOOP=0`)      | 1.763s | 40.973s |  5.382s |
-| `numactl` (`-DSPINLOOP=0`)  | 1.169s | 15.563s |  4.060s |
-| `-DSPINLOOP=50`             | 1.798s | 42.000s |  5.191s |
-| `-DSPINLOOP=50`,`numactl`   | 1.168s | 15.810s |  4.089s |
+| build                 | invocation | real   | user    | system  |
+| --------------------- | ---------- | -----: | ------: | ------: |
+| `-DWITH_SPINLOOP=OFF` | plain      | 1.763s | 40.973s |  5.382s |
+| `-DWITH_SPINLOOP=OFF` | `numactl`  | 1.169s | 15.563s |  4.060s |
+| `-DWITH_SPINLOOP=ON`  | plain      | 1.798s | 42.000s |  5.191s |
+| `-DWITH_SPINLOOP=ON`  | `numactl`  | 1.168s | 15.810s |  4.089s |
 
 The execution times without `numactl` vary a lot; a much longer run
 (with a larger value of `N_ROUNDS`) is advisable for performance tests.

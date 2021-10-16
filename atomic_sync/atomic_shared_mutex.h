@@ -14,13 +14,7 @@ If a thread is waiting for an exclusive lock(), further concurrent
 lock_shared() requests will be blocked until the exclusive lock has
 been granted and released in unlock().
 
-This lock can be used for buffer pool blocks in a database.
-We use the special std::thread::id{} value to denote that a granted
-update or exclusive lock is not currently owned by any thread.
-Such locks may be released by another thread, for example, in a write
-completion callback.
-
-This is based on the sux_lock in MariaDB Server 10.6.
+This is based on the ssux_lock in MariaDB Server 10.6.
 
 Inspiration for using a composition of a mutex and lock word was provided by
 http://locklessinc.com/articles/sleeping_rwlocks/
@@ -38,6 +32,10 @@ We also define the operations try_lock_update(), unlock_update().
 For conversions between update locks and exclusive locks, we define
 update_lock_upgrade(), lock_update_downgrade().
 
+We define spin_lock(), spin_lock_shared(), and spin_lock_update(),
+which are like lock(), lock_shared(), lock_update(), but with an
+initial spinloop.
+
 There is no explicit constructor or destructor.
 The object is expected to be zero-initialized, so that
 !is_locked_or_waiting() will hold.
@@ -47,11 +45,10 @@ runtime system or the operating system kernel: the one in the mutex for
 exclusive locking, and another for waking up an exclusive lock waiter
 that is already holding the mutex, once the last shared lock is released.
 We count shared locks to have necessary and sufficient notify_one() calls. */
-template<typename mutex>
-class atomic_shared_mutex_impl : std::atomic<uint32_t>
+class atomic_shared_mutex : std::atomic<uint32_t>
 {
   /** mutex for synchronization; continuously held by U or X lock holder */
-  mutex ex;
+  atomic_mutex ex;
   /** flag to indicate an exclusive request; X lock is held when load()==X */
   static constexpr uint32_t X = 1U << 31;
 
@@ -68,6 +65,37 @@ class atomic_shared_mutex_impl : std::atomic<uint32_t>
 
   /** Wait for a shared lock to be granted (any X lock to be released) */
   void shared_lock_wait() noexcept;
+  /** Wait for a shared lock to be granted (any X lock to be released),
+  with initial spinloop. */
+  void spin_shared_lock_wait() noexcept;
+
+  /** Increment the shared lock count while holding the mutex */
+  void shared_acquire()
+  {
+#ifndef NDEBUG
+    uint32_t lk =
+#endif
+    fetch_add(1, std::memory_order_acquire);
+    assert(lk < X - 1);
+  }
+
+  /** Acquire an exclusive lock while holding the mutex */
+  void exclusive_acquire()
+  {
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
+    /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
+    as a loop around LOCK CMPXCHG. In this particular case, toggling the
+    most significant bit using fetch_add() is equivalent, and is
+    translated into a simple LOCK XADD. */
+    static_assert(X == 1U << 31, "compatibility");
+    if (uint32_t lk = fetch_add(X, std::memory_order_acquire))
+      lock_wait(lk);
+#else
+    if (uint32_t lk = fetch_or(X, std::memory_order_acquire))
+      lock_wait(lk);
+#endif
+  }
+
 public:
   /** @return whether an exclusive lock is being held or waited for */
   bool is_waiting() const noexcept
@@ -123,33 +151,16 @@ public:
 
   /** Acquire a shared lock (which can coexist with S or U locks). */
   void lock_shared() noexcept { if (!try_lock_shared()) shared_lock_wait(); }
+  void spin_lock_shared() noexcept
+  { if (!try_lock_shared()) spin_shared_lock_wait(); }
+
   /** Acquire an update lock (which can coexist with S locks). */
-  void lock_update() noexcept
-  {
-    ex.lock();
-#ifndef NDEBUG
-    uint32_t lk =
-#endif
-    fetch_add(1, std::memory_order_acquire);
-    assert(lk < X - 1);
-  }
+  void lock_update() noexcept { ex.lock(); shared_acquire(); }
+  void spin_lock_update() noexcept { ex.spin_lock(); shared_acquire(); }
+
   /** Acquire an exclusive lock. */
-  void lock() noexcept
-  {
-    ex.lock();
-#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
-    /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
-    as a loop around LOCK CMPXCHG. In this particular case, setting the
-    most significant bit using fetch_add() is equivalent, and is
-    translated into a simple LOCK XADD. */
-    static_assert(X == 1U << 31, "compatibility");
-    if (uint32_t lk = fetch_add(X, std::memory_order_acquire))
-      lock_wait(lk);
-#else
-    if (uint32_t lk = fetch_or(X, std::memory_order_acquire))
-      lock_wait(lk);
-#endif
-  }
+  void lock() noexcept { ex.lock(); exclusive_acquire(); }
+  void spin_lock() noexcept { ex.spin_lock(); exclusive_acquire(); }
 
   /** Upgrade an update lock to exclusive. */
   void update_lock_upgrade() noexcept
@@ -196,9 +207,11 @@ public:
   }
 };
 
-typedef atomic_shared_mutex_impl<atomic_mutex> atomic_shared_mutex;
-#ifdef SPINLOOP
-typedef atomic_shared_mutex_impl<atomic_spin_mutex> atomic_spin_shared_mutex;
-#else
-typedef atomic_shared_mutex atomic_spin_shared_mutex;
-#endif
+/** Like atomic_shared_mutex, but with spinloops */
+class atomic_spin_shared_mutex : public atomic_shared_mutex
+{
+public:
+  void lock() noexcept { spin_lock(); }
+  void shared_lock() noexcept { spin_lock_shared(); }
+  void update_lock() noexcept { spin_lock_update(); }
+};

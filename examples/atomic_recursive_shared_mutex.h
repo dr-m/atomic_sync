@@ -40,12 +40,13 @@ lock_recursive() or lock_update_recursive() will allow
 the recursion or re-entrancy count to be incremented quickly.
 
 This is based on the ssux_lock in MariaDB Server 10.6. */
-template<typename a_shared_mutex>
-class atomic_recursive_shared_mutex_impl : a_shared_mutex
+class atomic_recursive_shared_mutex : atomic_shared_mutex
 {
-  /** Numbers of update and exclusive locks. Protected by a_shared_mutex. */
+  /** Numbers of update and exclusive locks.
+  Protected by atomic_shared_mutex. */
   uint32_t recursive;
-  /** The owner of update or exclusive locks. Protected by a_shared_mutex. */
+  /** The owner of update or exclusive locks.
+  Protected by atomic_shared_mutex. */
   std::atomic<std::thread::id> writer{};
 
   /** The multiplier in recursive for X locks */
@@ -84,23 +85,23 @@ class atomic_recursive_shared_mutex_impl : a_shared_mutex
     {
       set_holder(std::thread::id{});
       if (U)
-        a_shared_mutex::unlock_update();
+        atomic_shared_mutex::unlock_update();
       else
-        a_shared_mutex::unlock();
+        atomic_shared_mutex::unlock();
     }
   }
 
 public:
   void init() noexcept
   {
-    assert(!a_shared_mutex::is_locked_or_waiting());
+    assert(!atomic_shared_mutex::is_locked_or_waiting());
     assert(!recursive);
     assert(writer == std::thread::id{});
   }
 
   void destroy() noexcept
   {
-    assert(!a_shared_mutex::is_locked_or_waiting());
+    assert(!atomic_shared_mutex::is_locked_or_waiting());
     assert(!recursive);
   }
 
@@ -134,9 +135,10 @@ public:
   }
 
   bool try_lock_shared() noexcept
-  { return a_shared_mutex::try_lock_shared(); }
-  void lock_shared() noexcept { a_shared_mutex::lock_shared(); }
-  void unlock_shared() noexcept { a_shared_mutex::unlock_shared(); }
+  { return atomic_shared_mutex::try_lock_shared(); }
+  void lock_shared() noexcept { atomic_shared_mutex::lock_shared(); }
+  void spin_lock_shared() noexcept { atomic_shared_mutex::spin_lock_shared(); }
+  void unlock_shared() noexcept { atomic_shared_mutex::unlock_shared(); }
 
   /** Acquire an update lock */
   void lock_update() noexcept
@@ -146,7 +148,22 @@ public:
       writer_recurse<true>();
     else
     {
-      a_shared_mutex::lock_update();
+      atomic_shared_mutex::lock_update();
+      assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
+      assert(!recursive);
+      recursive = RECURSIVE_U;
+      set_holder(id);
+    }
+  }
+
+  void spin_lock_update() noexcept
+  {
+    const std::thread::id id = std::this_thread::get_id();
+    if (writer.load(std::memory_order_relaxed) == id)
+      writer_recurse<true>();
+    else
+    {
+      atomic_shared_mutex::spin_lock_update();
       assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
       assert(!recursive);
       recursive = RECURSIVE_U;
@@ -159,7 +176,18 @@ public:
   {
     assert(!(writer.load(std::memory_order_relaxed) ==
              std::this_thread::get_id()));
-    a_shared_mutex::lock_update();
+    atomic_shared_mutex::lock_update();
+    assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
+    assert(!recursive);
+    recursive = RECURSIVE_U;
+  }
+
+  /** Acquire an update lock, for set_holder() to be called later. */
+  void spin_lock_update_disowned() noexcept
+  {
+    assert(!(writer.load(std::memory_order_relaxed) ==
+             std::this_thread::get_id()));
+    atomic_shared_mutex::spin_lock_update();
     assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
     assert(!recursive);
     recursive = RECURSIVE_U;
@@ -173,7 +201,23 @@ public:
       writer_recurse<false>();
     else
     {
-      a_shared_mutex::lock();
+      atomic_shared_mutex::lock();
+      assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
+      assert(!recursive);
+      recursive = RECURSIVE_X;
+      set_holder(id);
+    }
+  }
+
+  /** Acquire an exclusive lock */
+  void spin_lock() noexcept
+  {
+    const std::thread::id id = std::this_thread::get_id();
+    if (writer.load(std::memory_order_relaxed) == id)
+      writer_recurse<false>();
+    else
+    {
+      atomic_shared_mutex::spin_lock();
       assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
       assert(!recursive);
       recursive = RECURSIVE_X;
@@ -186,7 +230,18 @@ public:
   {
     assert(!(writer.load(std::memory_order_relaxed) ==
              std::this_thread::get_id()));
-    a_shared_mutex::lock();
+    atomic_shared_mutex::lock();
+    assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
+    assert(!recursive);
+    recursive = RECURSIVE_X;
+  }
+
+  /** Acquire an exclusive lock, for set_holder() to be called later. */
+  void spin_lock_disowned() noexcept
+  {
+    assert(!(writer.load(std::memory_order_relaxed) ==
+             std::this_thread::get_id()));
+    atomic_shared_mutex::spin_lock();
     assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
     assert(!recursive);
     recursive = RECURSIVE_X;
@@ -201,7 +256,7 @@ public:
   void update_lock_upgrade() noexcept
   {
     assert(holding_lock_update());
-    a_shared_mutex::update_lock_upgrade();
+    atomic_shared_mutex::update_lock_upgrade();
     recursive /= RECURSIVE_U;
   }
 
@@ -211,7 +266,7 @@ public:
     assert(holding_lock());
     assert(recursive <= RECURSIVE_MAX);
     recursive *= RECURSIVE_U;
-    a_shared_mutex::lock_update_downgrade();
+    atomic_shared_mutex::lock_update_downgrade();
   }
 
   /** Acquire an exclusive lock or upgrade an update lock
@@ -232,7 +287,7 @@ public:
     }
     else
     {
-      a_shared_mutex::lock();
+      atomic_shared_mutex::lock();
       assert(!recursive);
       recursive = RECURSIVE_X;
       set_holder(id);
@@ -250,7 +305,7 @@ public:
       writer_recurse<true>();
       return true;
     }
-    if (!a_shared_mutex::try_lock_update())
+    if (!atomic_shared_mutex::try_lock_update())
       return false;
     assert(!recursive);
     assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
@@ -265,7 +320,7 @@ public:
   {
     assert(!(writer.load(std::memory_order_relaxed) ==
              std::this_thread::get_id()));
-    if (a_shared_mutex::try_lock_update())
+    if (atomic_shared_mutex::try_lock_update())
     {
       assert(!recursive);
       assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
@@ -285,7 +340,7 @@ public:
       writer_recurse<false>();
       return true;
     }
-    if (a_shared_mutex::try_lock())
+    if (atomic_shared_mutex::try_lock())
     {
       assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
       assert(!recursive);
@@ -304,7 +359,7 @@ public:
   {
     assert(!(writer.load(std::memory_order_relaxed) ==
              std::this_thread::get_id()));
-    if (a_shared_mutex::try_lock())
+    if (atomic_shared_mutex::try_lock())
     {
       assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
       assert(!recursive);
@@ -320,11 +375,12 @@ public:
   void unlock() noexcept { update_or_lock_unlock<false>(); }
 };
 
-typedef atomic_recursive_shared_mutex_impl<atomic_shared_mutex>
-atomic_recursive_shared_mutex;
-#ifdef SPINLOOP
-typedef atomic_recursive_shared_mutex_impl<atomic_spin_shared_mutex>
-atomic_spin_recursive_shared_mutex;
-#else
-typedef atomic_recursive_shared_mutex atomic_spin_recursive_shared_mutex;
-#endif
+class atomic_spin_recursive_shared_mutex : public atomic_recursive_shared_mutex
+{
+public:
+  void lock_shared() noexcept { spin_lock_shared(); }
+  void lock_update() noexcept { spin_lock_update(); }
+  void lock_update_disowned() noexcept { spin_lock_update_disowned(); }
+  void lock() noexcept { spin_lock(); }
+  void lock_disowned() noexcept { spin_lock_disowned(); }
+};
