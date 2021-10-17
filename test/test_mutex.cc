@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <thread>
 #include <cassert>
+#include <vector>
 #include <chrono>
 
 #include <mutex>
@@ -70,7 +71,7 @@ int main(int argc, char **argv)
       goto usage;
   }
 
-  std::thread t[N_THREADS];
+  std::vector<std::thread> t(N_THREADS);
 
   const auto start_atomic_mutex = std::chrono::steady_clock::now();
 
