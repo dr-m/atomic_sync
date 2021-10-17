@@ -150,14 +150,16 @@ to acquiring the lock.
 
 #### POWER v2.09 Hardware Trace Monitor (HTM)
 
-Run-time detection has been implemented on Linux only.
+This has been successfully tested on Debian GNU/Linux Buster with GCC
+7.5.0.
 
-When compiling the code with GCC 4.8.5, you will have to specify
-`-DCMAKE_CXX_FLAGS=-mhtm`.
+Inside QEMU virtual machines that I tested, the availability was not
+detected and an attempt to override the runtime detection (which is
+only implemented for Linux) caused the `tbegin.` instruction to throw
+`SIGILL` (illegal instruction).
 
-Run-time detection may depend on a recent enough version of Linux.
-
-The implementation may be broken.
+When compiling the code with earlier GCC than version 5, you will have
+to specify `-DCMAKE_CXX_FLAGS=-mhtm` or equivalent.
 
 #### ARMv8 Transactional Memory Extension (TME)
 

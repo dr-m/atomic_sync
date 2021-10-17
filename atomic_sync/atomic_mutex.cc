@@ -117,8 +117,8 @@ void atomic_mutex::spin_wait_and_lock() noexcept
 #endif
 # ifdef _WIN32
       YieldProcessor();
-# elif defined(_ARCH_PWR8)
-      __ppc_get_timebase();
+# elif defined __GNUC__ && defined _ARCH_PWR8
+      __builtin_ppc_get_timebase();
 # elif defined __GNUC__ && defined __i386__ || defined __x86_64__
       __asm__ __volatile__ ("pause");
 # endif

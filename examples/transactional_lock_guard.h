@@ -38,7 +38,7 @@ extern bool have_transactional_memory;
 TRANSACTIONAL_INLINE static inline bool xbegin()
 {
   return have_transactional_memory &&
-    __TM_begin(nullptr) == _HTM_TBEGIN_STARTED;
+    __TM_simple_begin() == _HTM_TBEGIN_STARTED;
 }
 static inline void xabort() { __TM_abort(); }
 static inline void xend() { __TM_end(); }
