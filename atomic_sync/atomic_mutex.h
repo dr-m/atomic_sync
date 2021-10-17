@@ -39,10 +39,10 @@ public:
   atomic_mutex& operator=(const atomic_mutex&) = delete;
 
   /** @return whether the mutex is being held or waited for */
-  bool is_locked_or_waiting() const
+  bool is_locked_or_waiting() const noexcept
   { return load(std::memory_order_acquire) != 0; }
   /** @return whether the mutex is being held by any thread */
-  bool is_locked() const
+  bool is_locked() const noexcept
   { return (load(std::memory_order_acquire) & HOLDER) != 0; }
 
   /** @return whether the mutex was acquired */

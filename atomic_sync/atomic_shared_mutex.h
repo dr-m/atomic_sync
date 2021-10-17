@@ -69,7 +69,7 @@ class atomic_shared_mutex : std::atomic<uint32_t>
   void spin_shared_lock_wait() noexcept;
 
   /** Increment the shared lock count while holding the mutex */
-  void shared_acquire()
+  void shared_acquire() noexcept
   {
 #ifndef NDEBUG
     uint32_t lk =
@@ -79,7 +79,7 @@ class atomic_shared_mutex : std::atomic<uint32_t>
   }
 
   /** Acquire an exclusive lock while holding the mutex */
-  void exclusive_acquire()
+  void exclusive_acquire() noexcept
   {
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     /* On IA-32 and AMD64, this type of fetch_or() can only be implemented

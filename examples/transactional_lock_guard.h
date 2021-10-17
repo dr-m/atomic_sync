@@ -87,7 +87,7 @@ public:
     m.lock();
   }
   transactional_lock_guard(const transactional_lock_guard &) = delete;
-  TRANSACTIONAL_INLINE ~transactional_lock_guard()
+  TRANSACTIONAL_INLINE ~transactional_lock_guard() noexcept
   {
 #ifdef WITH_ELISION
     if (was_elided()) xend(); else
@@ -131,7 +131,7 @@ public:
   }
   transactional_shared_lock_guard(const transactional_shared_lock_guard &) =
     delete;
-  TRANSACTIONAL_INLINE ~transactional_shared_lock_guard()
+  TRANSACTIONAL_INLINE ~transactional_shared_lock_guard() noexcept
   {
 #ifdef WITH_ELISION
     if (was_elided()) xend(); else
@@ -162,7 +162,7 @@ public:
   }
   transactional_update_lock_guard(const transactional_update_lock_guard &) =
     delete;
-  TRANSACTIONAL_INLINE ~transactional_update_lock_guard()
+  TRANSACTIONAL_INLINE ~transactional_update_lock_guard() noexcept
   {
 #ifdef WITH_ELISION
     if (was_elided()) xend(); else
