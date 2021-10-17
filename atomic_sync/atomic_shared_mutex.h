@@ -131,7 +131,7 @@ public:
   @return whether the U lock was acquired */
   bool try_lock_update() noexcept
   {
-    if (!ex.trylock())
+    if (!ex.try_lock())
       return false;
 #ifndef NDEBUG
     uint32_t lk =
@@ -145,7 +145,7 @@ public:
   @return whether the X lock was acquired */
   bool try_lock() noexcept
   {
-    if (!ex.trylock())
+    if (!ex.try_lock())
       return false;
     uint32_t lk = 0;
     if (compare_exchange_strong(lk, X, std::memory_order_acquire,
