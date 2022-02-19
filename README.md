@@ -6,9 +6,8 @@ version of the standard (C++20) extended it further with `wait()` and
 `notify_one()`, which allows the implementation of blocking
 operations, such as lock acquisition.
 
-In environments where the `futex` system call is available,
-`std::atomic::wait()` and `std::atomic::notify_one()` can be
-implemented by `futex`. Examples for Linux and OpenBSD are included.
+In environments where a system call like the Linux `futex` is available,
+`std::atomic::wait()` and `std::atomic::notify_one()` can be implemented by it.
 
 This project defines the following zero-initialized synchronization primitives:
 * `atomic_mutex`: A non-recursive mutex in 4 bytes that supports the
@@ -73,21 +72,23 @@ The implementation with C++20 `std::atomic` has been tested with:
 * clang++-12, clang++-13 using libstdc++-11-dev on Debian GNU/Linux
 
 The implementation with C++11 `std::atomic` and `futex` is expected
-to work with GCC 4.8.5 to GCC 10 on Linux on OpenBSD.
+to work with GCC 4.8.5 to GCC 10 on Linux, OpenBSD, FreeBSD, DragonFly BSD.
 It has been tested with:
 * GCC 10.2.1 on GNU/Linux
+* GCC 8.3 on DragonFly BSD
+* clang 11.0.1 on FreeBSD 13.0
 * clang++-12, clang++-13 on GNU/Linux when libstdc++-11-dev is not available
 * Intel C++ Compiler based on clang++-12
 
 The following operating systems seem to define something similar to a `futex`
 system call, but we have not implemented it yet:
-* FreeBSD: `_umtx_op()` (`UMTX_OP_WAIT_UINT_PRIVATE`, `UMTX_OP_WAKE_PRIVATE`)
-* DragonflyBSD: `umtx_sleep()`, `umtx_wakeup()`
 * Apple macOS: `__ulock_wait()`, `__ulock_wake()` (undocumented)
 
 The following operating systems do not appear to define a `futex` system call:
 * NetBSD
-* IBM AIX
+* Solaris (Illumos)
+* HP-UX
+* AIX
 
 The C++20 `std::atomic::wait()` and `std::atomic::notify_one()` would
 seem to deliver a portable `futex` interface. Unfortunately, it does

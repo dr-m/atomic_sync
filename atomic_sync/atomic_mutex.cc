@@ -14,6 +14,17 @@
 #  include <sys/futex.h>
 #  define FUTEX(op,n) \
    futex((volatile uint32_t*) this, FUTEX_ ## op, n, nullptr, nullptr)
+# elif defined __FreeBSD__
+#   include <sys/types.h>
+#   include <sys/umtx.h>
+#   define FUTEX_WAKE UMTX_OP_WAKE_PRIVATE
+#   define FUTEX_WAIT UMTX_OP_WAIT_UINT_PRIVATE
+#   define FUTEX(op,n) _umtx_op(this, FUTEX_ ## op, n, nullptr, nullptr)
+# elif defined __DragonFly__
+#   include <unistd.h>
+#   define FUTEX_WAKE(a,n) umtx_wakeup(a,n)
+#   define FUTEX_WAIT(a,n) umtx_sleep(a,n,0)
+#   define FUTEX(op,n) FUTEX_ ## op((volatile int*) this, int(n))
 # else
 #  error "no C++20 nor futex support"
 # endif
