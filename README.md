@@ -149,7 +149,7 @@ The elision is very simple, not even implementing any retry mechanism.
 If the lock cannot be elided on the first attempt, we will fall back
 to acquiring the lock.
 
-#### POWER v2.09 Hardware Trace Monitor (HTM)
+#### POWER v2.07 Hardware Transactional Memory (HTM)
 
 This has been successfully tested on Debian GNU/Linux Buster with GCC
 7.5.0.
