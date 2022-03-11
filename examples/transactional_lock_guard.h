@@ -2,6 +2,7 @@
 
 #ifndef WITH_ELISION
 #elif defined __powerpc64__
+#elif defined __s390__
 #elif defined __aarch64__ && defined __GNUC__ && __GNUC__ >= 10
 #elif defined __aarch64__ && defined __clang__ && __clang_major__ >= 10
 #elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
@@ -29,19 +30,14 @@ TRANSACTIONAL_INLINE static inline bool xbegin()
 { return have_transactional_memory && _xbegin() == _XBEGIN_STARTED; }
 TRANSACTIONAL_INLINE static inline void xabort() { _xabort(0); }
 TRANSACTIONAL_INLINE static inline void xend() { _xend(); }
-# elif defined __powerpc64__
-#  include <htmxlintrin.h>
-#  define TRANSACTIONAL_TARGET __attribute__((target("htm")))
-#  define TRANSACTIONAL_INLINE __attribute__((target("htm"),always_inline))
+# elif defined __powerpc64__ || defined __s390__
+#  define TRANSACTIONAL_TARGET __attribute__((target("hot")))
+#  define TRANSACTIONAL_INLINE __attribute__((target("hot"),always_inline))
 extern bool have_transactional_memory;
 
-TRANSACTIONAL_INLINE static inline bool xbegin()
-{
-  return have_transactional_memory &&
-    __TM_simple_begin() == _HTM_TBEGIN_STARTED;
-}
-static inline void xabort() { __TM_abort(); }
-static inline void xend() { __TM_end(); }
+bool xbegin();
+bool xabort();
+bool xend();
 # elif defined __aarch64__
 /* FIXME: No runtime detection of TME has been implemented! */
 constexpr bool have_transactional_memory = true;
