@@ -1,6 +1,8 @@
 CMAKE_MINIMUM_REQUIRED (VERSION 3.1)
 
-PROJECT (atomic_sync)
+PROJECT (atomic_sync
+  LANGUAGES CXX
+  DESCRIPTION "memory transaction friendly std::atomic based locks")
 
 IF (CMAKE_VERSION VERSION_GREATER_EQUAL 3.12)
   SET (CMAKE_CXX_STANDARD 20)
