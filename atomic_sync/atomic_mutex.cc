@@ -41,6 +41,10 @@ translate the following single-bit operations into Intel 80386 instructions:
      m.fetch_and(~(1<<b)) & 1<<b   LOCK BTR b, m
      m.fetch_xor(1<<b) & 1<<b      LOCK BTC b, m
 
+In g++-12 and clang++-15 this actually works, except for b==31:
+https://gcc.gnu.org/bugzilla/show_bug.cgi?id=102566
+https://github.com/llvm/llvm-project/issues/37322
+
 Hence, we will manually translate fetch_or() using GCC-style inline
 assembler code or a MSVC intrinsic function.
 
@@ -70,16 +74,21 @@ void atomic_mutex::wait_and_lock() noexcept
     if (lk & HOLDER)
     {
       wait(lk);
-#ifdef IF_FETCH_OR_GOTO
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     reload:
 #endif
       lk = load(std::memory_order_relaxed);
     }
-#ifdef IF_FETCH_OR_GOTO
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     else
     {
+# ifdef IF_FETCH_OR_GOTO
       static_assert(HOLDER == (1U << 31), "compatibility");
       IF_FETCH_OR_GOTO(*this, 31, reload);
+# else
+      if (fetch_or(HOLDER, std::memory_order_relaxed) & HOLDER)
+        goto reload;
+# endif
       std::atomic_thread_fence(std::memory_order_acquire);
       return;
     }
