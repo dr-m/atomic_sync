@@ -21,7 +21,7 @@ constexpr unsigned M_ROUNDS = 100;
 # define atomic_spin_shared_mutex atomic_shared_mutex
 # define atomic_spin_recursive_shared_mutex atomic_recursive_shared_mutex
 #endif
-static atomic_spin_mutex m;
+static atomic_spin_mutex<> m;
 
 #if !defined WITH_ELISION || defined NDEBUG
 # define transactional_assert(x) assert(x)
@@ -33,7 +33,7 @@ TRANSACTIONAL_TARGET static void test_atomic_mutex()
 {
   for (auto i = N_ROUNDS * M_ROUNDS; i--; )
   {
-    transactional_lock_guard<atomic_spin_mutex> g{m};
+    transactional_lock_guard<atomic_spin_mutex<>> g{m};
     transactional_assert(!critical);
     critical = true;
     critical = false;
@@ -46,14 +46,14 @@ abort:
 #endif
 }
 
-static atomic_spin_shared_mutex sux;
+static atomic_spin_shared_mutex<> sux;
 
 TRANSACTIONAL_TARGET static void test_shared_mutex()
 {
   for (auto i = N_ROUNDS; i--; )
   {
     {
-      transactional_lock_guard<atomic_spin_shared_mutex> g{sux};
+      transactional_lock_guard<atomic_spin_shared_mutex<>> g{sux};
       transactional_assert(!critical);
       critical = true;
       critical = false;
@@ -61,13 +61,13 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
 
     for (auto j = M_ROUNDS; j--; )
     {
-      transactional_shared_lock_guard<atomic_spin_shared_mutex> g{sux};
+      transactional_shared_lock_guard<atomic_spin_shared_mutex<>> g{sux};
       transactional_assert(!critical);
     }
 
     for (auto j = M_ROUNDS; j--; )
     {
-      transactional_update_lock_guard<atomic_spin_shared_mutex> g{sux};
+      transactional_update_lock_guard<atomic_spin_shared_mutex<>> g{sux};
       transactional_assert(!critical);
       if (!g.was_elided())
         sux.update_lock_upgrade();
@@ -86,7 +86,7 @@ abort:
 #endif
 }
 
-static atomic_spin_recursive_shared_mutex recursive_sux;
+static atomic_spin_recursive_shared_mutex<> recursive_sux;
 
 static void test_recursive_shared_mutex()
 {

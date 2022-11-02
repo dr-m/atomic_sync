@@ -28,8 +28,11 @@
 # else
 #  error "no C++20 nor futex support"
 # endif
-void atomic_mutex::notify_one() noexcept {FUTEX(WAKE, 1);}
-inline void atomic_mutex::wait(uint32_t old) const noexcept {FUTEX(WAIT, old);}
+template<>
+void mutex_storage<uint32_t>::notify_one() noexcept {FUTEX(WAKE, 1);}
+template<>
+inline void mutex_storage<uint32_t>::wait(uint32_t old) const noexcept
+{FUTEX(WAIT, old);}
 #endif
 
 /*
@@ -67,17 +70,19 @@ assembler code or a MSVC intrinsic function.
     goto label;
 #endif
 
-void atomic_mutex::wait_and_lock() noexcept
+template<typename T>
+void mutex_storage<T>::wait_and_lock() noexcept
 {
-  for (uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);;)
+  T lk = WAITER + this->fetch_add(WAITER, std::memory_order_relaxed);
+  for (;;)
   {
     if (lk & HOLDER)
     {
-      wait(lk);
+      this->wait(lk);
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     reload:
 #endif
-      lk = load(std::memory_order_relaxed);
+      lk = std::atomic<T>::load(std::memory_order_relaxed);
     }
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     else
@@ -86,14 +91,15 @@ void atomic_mutex::wait_and_lock() noexcept
       static_assert(HOLDER == (1U << 31), "compatibility");
       IF_FETCH_OR_GOTO(*this, 31, reload);
 # else
-      if (fetch_or(HOLDER, std::memory_order_relaxed) & HOLDER)
+      if (this->fetch_or(HOLDER, std::memory_order_relaxed) & HOLDER)
         goto reload;
 # endif
       std::atomic_thread_fence(std::memory_order_acquire);
       return;
     }
 #else
-    else if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
+    else if (!((lk = this->fetch_or(HOLDER, std::memory_order_relaxed)) &
+               HOLDER))
     {
       assert(lk);
       std::atomic_thread_fence(std::memory_order_acquire);
@@ -106,25 +112,26 @@ void atomic_mutex::wait_and_lock() noexcept
 }
 
 #ifndef SPINLOOP
-void atomic_mutex::spin_wait_and_lock() noexcept { wait_and_lock(); }
+template<typename T> void mutex_storage<T>::spin_wait_and_lock() noexcept
+{ wait_and_lock(); }
 #else
 /** The count of 50 seems to yield the best NUMA performance on
 Intel Xeon E5-2630 v4 (Haswell microarchitecture) */
-unsigned atomic_mutex::spin_rounds = SPINLOOP;
+template<> unsigned mutex_storage<uint32_t>::spin_rounds = SPINLOOP;
 # ifdef _WIN32
 #  include <windows.h>
 # endif
 
-void atomic_mutex::spin_wait_and_lock() noexcept
+template<typename T> void mutex_storage<T>::spin_wait_and_lock() noexcept
 {
-  uint32_t lk = 1 + fetch_add(1, std::memory_order_relaxed);
+  T lk = WAITER + this->fetch_add(WAITER, std::memory_order_relaxed);
 
   /* We hope to avoid system calls when the conflict is resolved quickly. */
   for (auto spin = spin_rounds;;)
   {
     assert(~HOLDER & lk);
     if (lk & HOLDER)
-      lk = load(std::memory_order_relaxed);
+      lk = this->load(std::memory_order_relaxed);
     else
     {
 #ifdef IF_NOT_FETCH_OR_GOTO
@@ -132,7 +139,7 @@ void atomic_mutex::spin_wait_and_lock() noexcept
       IF_NOT_FETCH_OR_GOTO(*this, 31, acquired);
       lk|= HOLDER;
 #else
-      if (!((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
+      if (!((lk = this->fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
         goto acquired;
 #endif
 # ifdef _WIN32
@@ -152,11 +159,11 @@ void atomic_mutex::spin_wait_and_lock() noexcept
     assert(~HOLDER & lk);
     if (lk & HOLDER)
     {
-      wait(lk);
+      this->wait(lk);
 #ifdef IF_FETCH_OR_GOTO
     reload:
 #endif
-      lk = load(std::memory_order_relaxed);
+      lk = this->load(std::memory_order_relaxed);
     }
     else
     {
@@ -164,7 +171,7 @@ void atomic_mutex::spin_wait_and_lock() noexcept
       static_assert(HOLDER == (1U << 31), "compatibility");
       IF_FETCH_OR_GOTO(*this, 31, reload);
 #else
-      if ((lk = fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER)
+      if ((lk = this->fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER)
         continue;
       else
         assert(lk);
@@ -176,3 +183,18 @@ void atomic_mutex::spin_wait_and_lock() noexcept
   }
 }
 #endif
+
+template<typename T> void mutex_storage<T>::lock_wait(T lk) noexcept
+{
+  do
+  {
+    assert(lk > HOLDER);
+    this->wait(lk);
+    lk = std::atomic<T>::load(std::memory_order_acquire);
+  }
+  while (lk != HOLDER);
+}
+
+template void mutex_storage<uint32_t>::wait_and_lock() noexcept;
+template void mutex_storage<uint32_t>::spin_wait_and_lock() noexcept;
+template void mutex_storage<uint32_t>::lock_wait(uint32_t) noexcept;

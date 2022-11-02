@@ -13,26 +13,26 @@ static std::atomic<bool> critical;
 static unsigned long N_THREADS;
 static unsigned long N_ROUNDS;
 
-static atomic_mutex a_m;
+static atomic_mutex<> a_m;
 
 static void test_atomic_mutex()
 {
   for (auto i = N_ROUNDS; i; i--)
   {
-    std::lock_guard<atomic_mutex> g{a_m};
+    std::lock_guard<atomic_mutex<>> g{a_m};
     assert(!critical);
     critical = true;
     critical = false;
   }
 }
 
-static atomic_spin_mutex a_sm;
+static atomic_spin_mutex<> a_sm;
 
 static void test_atomic_spin_mutex()
 {
   for (auto i = N_ROUNDS; i; i--)
   {
-    std::lock_guard<atomic_spin_mutex> g{a_sm};
+    std::lock_guard<atomic_spin_mutex<>> g{a_sm};
     assert(!critical);
     critical = true;
     critical = false;

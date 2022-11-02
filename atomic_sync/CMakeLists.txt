@@ -5,12 +5,6 @@ IF (${SPINLOOP} GREATER 0)
   TARGET_COMPILE_DEFINITIONS (atomic_mutex PRIVATE SPINLOOP=${SPINLOOP})
 ENDIF()
 
-ADD_LIBRARY (atomic_shared_mutex atomic_shared_mutex.cc)
-TARGET_INCLUDE_DIRECTORIES (atomic_shared_mutex PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR})
-TARGET_LINK_LIBRARIES (atomic_shared_mutex LINK_PUBLIC atomic_mutex)
-
 IF (CMAKE_CXX_STANDARD GREATER_EQUAL 20)
   TARGET_COMPILE_FEATURES (atomic_mutex PUBLIC cxx_std_11)
-  TARGET_COMPILE_FEATURES (atomic_shared_mutex PUBLIC cxx_std_11)
 ENDIF()

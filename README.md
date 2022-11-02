@@ -10,10 +10,11 @@ In environments where a system call like the Linux `futex` is available,
 `std::atomic::wait()` and `std::atomic::notify_one()` can be implemented by it.
 
 This project defines the following zero-initialized synchronization primitives:
-* `atomic_mutex`: A non-recursive mutex in 4 bytes that supports the
+* `mutex_storage`: A wrapper of `std::atomic` (default: 4 bytes)
+* `atomic_mutex`: A non-recursive mutex in `mutex_storage` that supports the
 transfer of lock ownership (`lock()` and `unlock()` in different threads)
 * `atomic_shared_mutex`: A non-recursive rw-lock or
-(shared,update,exclusive) lock in 4+4 bytes that supports the transfer
+(shared,update,exclusive) lock in 2 `mutex_storage` that supports the transfer
 of lock ownership.
 
 Some examples of extending or using the primitives are provided:
