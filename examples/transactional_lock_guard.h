@@ -114,7 +114,7 @@ public:
 #ifdef WITH_ELISION
     if (xbegin())
     {
-      if (!m.is_shared_locked())
+      if (!m.is_locked())
       {
         elided = true;
         return;

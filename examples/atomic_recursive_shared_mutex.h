@@ -40,7 +40,7 @@ lock_recursive() or lock_update_recursive() will allow
 the recursion or re-entrancy count to be incremented quickly.
 
 This is based on the ssux_lock in MariaDB Server 10.6. */
-template<typename storage = mutex_storage<>>
+template<typename storage = shared_mutex_storage<>>
 class atomic_recursive_shared_mutex : atomic_shared_mutex<storage>
 {
   using super = atomic_shared_mutex<storage>;
@@ -377,15 +377,14 @@ public:
   void unlock() noexcept { update_or_lock_unlock<false>(); }
 };
 
-template<typename storage = mutex_storage<>>
+template<typename storage = shared_mutex_storage<>>
 class atomic_spin_recursive_shared_mutex :
   public atomic_recursive_shared_mutex<storage>
 {
-  using super = atomic_recursive_shared_mutex<storage>;
 public:
-  void lock_shared() noexcept { super::spin_lock_shared(); }
-  void lock_update() noexcept { super::spin_lock_update(); }
-  void lock_update_disowned() noexcept { super::spin_lock_update_disowned(); }
-  void lock() noexcept { super::spin_lock(); }
-  void lock_disowned() noexcept { super::spin_lock_disowned(); }
+  void lock_shared() noexcept { this->spin_lock_shared(); }
+  void lock_update() noexcept { this->spin_lock_update(); }
+  void lock_update_disowned() noexcept { this->spin_lock_update_disowned(); }
+  void lock() noexcept { this->spin_lock(); }
+  void lock_disowned() noexcept { this->spin_lock_disowned(); }
 };

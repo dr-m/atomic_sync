@@ -82,7 +82,7 @@ void mutex_storage<T>::wait_and_lock() noexcept
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     reload:
 #endif
-      lk = std::atomic<T>::load(std::memory_order_relaxed);
+      lk = this->load(std::memory_order_relaxed);
     }
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     else
@@ -190,7 +190,7 @@ template<typename T> void mutex_storage<T>::lock_wait(T lk) noexcept
   {
     assert(lk > HOLDER);
     this->wait(lk);
-    lk = std::atomic<T>::load(std::memory_order_acquire);
+    lk = this->load(std::memory_order_acquire);
   }
   while (lk != HOLDER);
 }

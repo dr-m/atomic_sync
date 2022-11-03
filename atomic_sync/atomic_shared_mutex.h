@@ -1,6 +1,19 @@
 #pragma once
 #include "atomic_mutex.h"
 
+template<typename T = uint32_t>
+struct shared_mutex_storage : mutex_storage<T>
+{
+  atomic_mutex<mutex_storage<T>> ex;
+
+#if defined WITH_ELISION || !defined NDEBUG
+  bool is_locked() const noexcept
+  { return this->load(std::memory_order_acquire) == this->HOLDER; }
+  bool is_locked_or_waiting() const noexcept
+  { return ex.is_locked_or_waiting() || this->is_locked(); }
+#endif
+};
+
 /** Slim Shared/Update/Exclusive lock without recursion (re-entrancy).
 
 At most one thread may hold an exclusive lock, such that no other threads
@@ -38,12 +51,9 @@ runtime system or the operating system kernel: the one in the mutex for
 exclusive locking, and another for waking up an exclusive lock waiter
 that is already holding the mutex, once the last shared lock is released.
 We count shared locks to have necessary and sufficient notify_one() calls. */
-template<typename storage = mutex_storage<>>
+template<typename storage = shared_mutex_storage<>>
 class atomic_shared_mutex : public storage
 {
-  /** mutex for synchronization; continuously held by U or X lock holder */
-  atomic_mutex<storage> ex;
-
   using type = typename storage::type;
   /** flag to indicate an exclusive request; X lock is held when load()==X */
   static constexpr type X = storage::HOLDER;
@@ -51,12 +61,12 @@ class atomic_shared_mutex : public storage
 
   /** Wait for an exclusive lock to be granted (any S locks to be released)
   @param lk  recent number of conflicting S lock holders */
-  void lock_wait(type lk) noexcept
+  void exclusive_lock_wait(type lk) noexcept
   {
-    assert(ex.is_locked());
+    assert(this->ex.is_locked());
     assert(lk);
     assert(lk < X);
-    storage::lock_wait(lk | X);
+    this->lock_wait(lk | X);
   }
 
   /** Wait for a shared lock to be granted (any X lock to be released) */
@@ -64,19 +74,18 @@ class atomic_shared_mutex : public storage
   {
     bool acquired;
     do {
-      ex.lock();
+      this->ex.lock();
       acquired = try_lock_shared();
-      ex.unlock();
+      this->ex.unlock();
     } while (!acquired);
   }
   /** Wait for a shared lock to be granted (any X lock to be released),
   with initial spinloop. */
   void spin_shared_lock_wait() noexcept
   {
-    ex.spin_lock();
-    bool acquired;
-    acquired = try_lock_shared();
-    ex.unlock();
+    this->ex.spin_lock();
+    bool acquired = try_lock_shared();
+    this->ex.unlock();
     if (!acquired)
       shared_lock_wait();
   }
@@ -87,7 +96,7 @@ class atomic_shared_mutex : public storage
 #ifndef NDEBUG
     type lk =
 #endif
-      storage::fetch_add(WAITER, std::memory_order_acquire);
+      this->fetch_add(WAITER, std::memory_order_acquire);
     assert(lk < X - WAITER);
   }
 
@@ -101,36 +110,30 @@ class atomic_shared_mutex : public storage
     most significant bit using fetch_add() is equivalent, and is
     translated into a simple LOCK XADD. */
     if (X == type(~(type(~type(0) >> 1))))
-      lk = storage::fetch_add(X, std::memory_order_acquire);
+      lk = this->fetch_add(X, std::memory_order_acquire);
     else
 #endif
-      lk = storage::fetch_or(X, std::memory_order_acquire);
+      lk = this->fetch_or(X, std::memory_order_acquire);
     if (lk)
-      lock_wait(lk);
+      exclusive_lock_wait(lk);
   }
 
 public:
   /** Default constructor */
-  constexpr atomic_shared_mutex() : storage(), ex() {}
+  constexpr atomic_shared_mutex() = default;
   /** No copy constructor */
   atomic_shared_mutex(const atomic_shared_mutex&) = delete;
   /** No assignment operator */
   atomic_shared_mutex& operator=(const atomic_shared_mutex&) = delete;
-
-#if defined WITH_ELISION || !defined NDEBUG
-  /* FIXME: how to define this in mutex_storage? */
-  bool is_locked_or_waiting() const noexcept
-  { return storage::is_locked() || ex.is_locked_or_waiting(); }
-#endif
 
   /** Try to acquire a shared lock.
   @return whether the S lock was acquired */
   bool try_lock_shared() noexcept
   {
     type lk = 0;
-    while (!storage::compare_exchange_weak(lk, lk + WAITER,
-                                           std::memory_order_acquire,
-                                           std::memory_order_relaxed))
+    while (!this->compare_exchange_weak(lk, lk + WAITER,
+                                        std::memory_order_acquire,
+                                        std::memory_order_relaxed))
       if (lk & X)
         return false;
     return true;
@@ -140,12 +143,12 @@ public:
   @return whether the U lock was acquired */
   bool try_lock_update() noexcept
   {
-    if (!ex.try_lock())
+    if (!this->ex.try_lock())
       return false;
 #ifndef NDEBUG
     type lk =
 #endif
-    storage::fetch_add(WAITER, std::memory_order_acquire);
+    this->fetch_add(WAITER, std::memory_order_acquire);
     assert(lk < X - WAITER);
     return true;
   }
@@ -154,13 +157,13 @@ public:
   @return whether the X lock was acquired */
   bool try_lock() noexcept
   {
-    if (!ex.try_lock())
+    if (!this->ex.try_lock())
       return false;
     type lk = 0;
     if (compare_exchange_strong(lk, X, std::memory_order_acquire,
                                 std::memory_order_relaxed))
       return true;
-    ex.unlock();
+    this->ex.unlock();
     return false;
   }
 
@@ -170,37 +173,37 @@ public:
   { if (!try_lock_shared()) spin_shared_lock_wait(); }
 
   /** Acquire an update lock (which can coexist with S locks). */
-  void lock_update() noexcept { ex.lock(); shared_acquire(); }
-  void spin_lock_update() noexcept { ex.spin_lock(); shared_acquire(); }
+  void lock_update() noexcept { this->ex.lock(); shared_acquire(); }
+  void spin_lock_update() noexcept { this->ex.spin_lock(); shared_acquire(); }
 
   /** Acquire an exclusive lock. */
-  void lock() noexcept { ex.lock(); exclusive_acquire(); }
-  void spin_lock() noexcept { ex.spin_lock(); exclusive_acquire(); }
+  void lock() noexcept { this->ex.lock(); exclusive_acquire(); }
+  void spin_lock() noexcept { storage::ex.spin_lock(); exclusive_acquire(); }
 
   /** Upgrade an update lock to exclusive. */
   void update_lock_upgrade() noexcept
   {
-    assert(ex.is_locked());
-    type lk = storage::fetch_add(X - WAITER, std::memory_order_acquire);
+    assert(this->ex.is_locked());
+    type lk = this->fetch_add(X - WAITER, std::memory_order_acquire);
     if (lk != WAITER)
-      lock_wait(lk - WAITER);
+      exclusive_lock_wait(lk - WAITER);
   }
   /** Downgrade an exclusive lock to update. */
   void lock_update_downgrade() noexcept
   {
-    assert(ex.is_locked());
-    assert(storage::is_shared_locked());
-    storage::store(WAITER, std::memory_order_release);
+    assert(this->ex.is_locked());
+    assert(this->is_locked());
+    this->store(WAITER, std::memory_order_release);
     /* Note: Any pending s_lock() will not be woken up until u_unlock() */
   }
 
   /** Release a shared lock. */
   void unlock_shared() noexcept
   {
-    type lk = storage::fetch_sub(WAITER, std::memory_order_release);
+    type lk = this->fetch_sub(WAITER, std::memory_order_release);
     assert(~X & lk);
     if (lk == X + WAITER)
-      storage::notify_one();
+      this->notify_one();
   }
   /** Release an update lock. */
   void unlock_update() noexcept
@@ -208,29 +211,26 @@ public:
 #ifndef NDEBUG
     type lk =
 #endif
-      storage::fetch_sub(WAITER, std::memory_order_release);
+      this->fetch_sub(WAITER, std::memory_order_release);
     assert(lk);
     assert(lk < X);
-    ex.unlock();
+    this->ex.unlock();
   }
   /** Release an exclusive lock. */
   void unlock() noexcept
   {
-    assert(storage::is_shared_locked());
-    storage::store(0, std::memory_order_release);
-    ex.unlock();
+    assert(this->is_locked());
+    this->store(0, std::memory_order_release);
+    this->ex.unlock();
   }
 };
 
 /** Like atomic_shared_mutex, but with spinloops */
-template<typename storage = mutex_storage<>>
+template<typename storage = shared_mutex_storage<>>
 class atomic_spin_shared_mutex : public atomic_shared_mutex<storage>
 {
 public:
-  void lock() noexcept
-  { atomic_shared_mutex<storage>::spin_lock(); }
-  void shared_lock() noexcept
-  { atomic_shared_mutex<storage>::spin_lock_shared(); }
-  void update_lock() noexcept
-  { atomic_shared_mutex<storage>::spin_lock_update(); }
+  void lock() noexcept { this->spin_lock(); }
+  void shared_lock() noexcept { this->spin_lock_shared(); }
+  void update_lock() noexcept { this->spin_lock_update(); }
 };

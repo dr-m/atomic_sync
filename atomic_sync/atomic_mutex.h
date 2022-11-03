@@ -25,12 +25,9 @@ struct mutex_storage : std::atomic<T>
 
 #if defined WITH_ELISION || !defined NDEBUG
   bool is_locked_or_waiting() const noexcept
-  { return std::atomic<T>::load(std::memory_order_acquire) != 0; }
+  { return this->load(std::memory_order_acquire) != 0; }
   bool is_locked() const noexcept
-  { return std::atomic<T>::load(std::memory_order_acquire) & HOLDER; }
-  // for atomic_shared_mutex
-  bool is_shared_locked() const noexcept
-  { return std::atomic<T>::load(std::memory_order_acquire) == HOLDER; }
+  { return this->load(std::memory_order_acquire) & HOLDER; }
 #endif
 };
 
@@ -50,8 +47,6 @@ class atomic_mutex : public storage
   static constexpr auto WAITER = storage::WAITER;
   static constexpr auto HOLDER = storage::HOLDER;
 
-  /** Wait until the mutex has been acquired, with initial spinloop */
-  void spin_wait_and_lock() noexcept;
 public:
   /** Default constructor */
   constexpr atomic_mutex() = default;
@@ -64,21 +59,21 @@ public:
   bool try_lock() noexcept
   {
     type lk = 0;
-    return storage::compare_exchange_strong(lk, HOLDER + WAITER,
-                                            std::memory_order_acquire,
-                                            std::memory_order_relaxed);
+    return this->compare_exchange_strong(lk, HOLDER + WAITER,
+                                         std::memory_order_acquire,
+                                         std::memory_order_relaxed);
   }
 
-  void lock() noexcept { if (!try_lock()) storage::wait_and_lock(); }
-  void spin_lock() noexcept { if (!try_lock()) storage::spin_wait_and_lock(); }
+  void lock() noexcept { if (!try_lock()) this->wait_and_lock(); }
+  void spin_lock() noexcept { if (!try_lock()) this->spin_wait_and_lock(); }
   void unlock() noexcept
   {
     const type lk =
-      storage::fetch_sub(HOLDER + WAITER, std::memory_order_release);
+      this->fetch_sub(HOLDER + WAITER, std::memory_order_release);
     if (lk != HOLDER + WAITER)
     {
       assert(lk & HOLDER);
-      storage::notify_one();
+      this->notify_one();
     }
   }
 };
