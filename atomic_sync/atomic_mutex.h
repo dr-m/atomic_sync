@@ -23,7 +23,7 @@ struct mutex_storage : std::atomic<T>
   // for atomic_shared_mutex
   void lock_wait(T lk) noexcept;
 
-#if defined WITH_ELISION || !defined NDEBUG
+#ifndef NDEBUG
   bool is_locked_or_waiting() const noexcept
   { return this->load(std::memory_order_acquire) != 0; }
   bool is_locked() const noexcept

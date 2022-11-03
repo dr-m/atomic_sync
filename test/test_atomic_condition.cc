@@ -5,19 +5,20 @@
 #include "atomic_shared_mutex.h"
 #include "atomic_condition_variable.h"
 #include "transactional_lock_guard.h"
+#include "transactional_mutex_storage.h"
 
 static std::atomic<bool> critical;
 
 constexpr unsigned N_THREADS = 30;
 constexpr unsigned N_ROUNDS = 100;
 
-static atomic_mutex<> m;
-static atomic_shared_mutex<> sux;
+static atomic_mutex<transactional_mutex_storage> m;
+static atomic_shared_mutex<transactional_shared_mutex_storage> sux;
 static atomic_condition_variable cv;
 
 TRANSACTIONAL_TARGET static void test_condition_variable()
 {
-  transactional_lock_guard<atomic_mutex<>> g{m};
+  transactional_lock_guard<typeof m> g{m};
   if (critical)
     return;
 #ifdef WITH_ELISION
@@ -30,7 +31,7 @@ TRANSACTIONAL_TARGET static void test_condition_variable()
 
 TRANSACTIONAL_TARGET static void test_shared_condition_variable()
 {
-  transactional_shared_lock_guard<atomic_shared_mutex<>> g{sux};
+  transactional_shared_lock_guard<typeof sux> g{sux};
 #ifdef WITH_ELISION
   if (!critical && g.was_elided())
     xabort();
@@ -59,7 +60,7 @@ int main(int, char **)
       t[i] = std::thread(test_condition_variable);
     bool is_waiting;
     {
-      transactional_lock_guard<atomic_mutex<>> g{m};
+      transactional_lock_guard<typeof m> g{m};
       critical = true;
       is_waiting = cv.is_waiting();
     }
@@ -79,7 +80,7 @@ int main(int, char **)
       t[i] = std::thread(test_shared_condition_variable);
     bool is_waiting;
     {
-      transactional_lock_guard<atomic_shared_mutex<>> g{sux};
+      transactional_lock_guard<typeof sux> g{sux};
       critical = true;
       is_waiting = cv.is_waiting();
     }

@@ -6,7 +6,7 @@ struct shared_mutex_storage : mutex_storage<T>
 {
   atomic_mutex<mutex_storage<T>> ex;
 
-#if defined WITH_ELISION || !defined NDEBUG
+#ifndef NDEBUG
   bool is_locked() const noexcept
   { return this->load(std::memory_order_acquire) == this->HOLDER; }
   bool is_locked_or_waiting() const noexcept
