@@ -75,21 +75,17 @@ int main(int argc, char **argv)
 
   const auto start_atomic_mutex = std::chrono::steady_clock::now();
 
-  assert(!a_m.is_locked_or_waiting());
   for (auto i = N_THREADS; i--; )
     t[i] = std::thread(test_atomic_mutex);
   for (auto i = N_THREADS; i--; )
     t[i].join();
-  assert(!a_m.is_locked_or_waiting());
 
   const auto start_atomic_spin_mutex = std::chrono::steady_clock::now();
 
-  assert(!a_sm.is_locked_or_waiting());
   for (auto i = N_THREADS; i--; )
     t[i] = std::thread(test_atomic_spin_mutex);
   for (auto i = N_THREADS; i--; )
     t[i].join();
-  assert(!a_sm.is_locked_or_waiting());
 
   const auto start_mutex = std::chrono::steady_clock::now();
 

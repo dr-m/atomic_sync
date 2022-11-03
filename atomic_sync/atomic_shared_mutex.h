@@ -5,13 +5,6 @@ template<typename T = uint32_t>
 struct shared_mutex_storage : mutex_storage<T>
 {
   atomic_mutex<mutex_storage<T>> ex;
-
-#ifndef NDEBUG
-  bool is_locked() const noexcept
-  { return this->load(std::memory_order_acquire) == this->HOLDER; }
-  bool is_locked_or_waiting() const noexcept
-  { return ex.is_locked_or_waiting() || this->is_locked(); }
-#endif
 };
 
 /** Slim Shared/Update/Exclusive lock without recursion (re-entrancy).
@@ -59,11 +52,18 @@ class atomic_shared_mutex : public storage
   static constexpr type X = storage::HOLDER;
   static constexpr type WAITER = storage::WAITER;
 
+#ifndef NDEBUG
+  bool is_ex_locked() const noexcept
+  { return this->ex.load(std::memory_order_acquire) != 0; }
+  bool is_exclusively_locked() const noexcept
+  { return this->load(std::memory_order_acquire) == this->HOLDER; }
+#endif
+
   /** Wait for an exclusive lock to be granted (any S locks to be released)
   @param lk  recent number of conflicting S lock holders */
   void exclusive_lock_wait(type lk) noexcept
   {
-    assert(this->ex.is_locked());
+    assert(is_ex_locked());
     assert(lk);
     assert(lk < X);
     this->lock_wait(lk | X);
@@ -183,7 +183,7 @@ public:
   /** Upgrade an update lock to exclusive. */
   void update_lock_upgrade() noexcept
   {
-    assert(this->ex.is_locked());
+    assert(is_ex_locked());
     type lk = this->fetch_add(X - WAITER, std::memory_order_acquire);
     if (lk != WAITER)
       exclusive_lock_wait(lk - WAITER);
@@ -191,10 +191,11 @@ public:
   /** Downgrade an exclusive lock to update. */
   void lock_update_downgrade() noexcept
   {
-    assert(this->ex.is_locked());
-    assert(this->is_locked());
+    assert(is_ex_locked());
+    assert(is_exclusively_locked());
     this->store(WAITER, std::memory_order_release);
-    /* Note: Any pending s_lock() will not be woken up until u_unlock() */
+    /* Note: Any pending lock_shared() will not be woken up until
+       unlock_update() */
   }
 
   /** Release a shared lock. */
@@ -219,7 +220,7 @@ public:
   /** Release an exclusive lock. */
   void unlock() noexcept
   {
-    assert(this->is_locked());
+    assert(is_exclusively_locked());
     this->store(0, std::memory_order_release);
     this->ex.unlock();
   }
