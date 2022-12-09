@@ -8,7 +8,7 @@
 #include <mutex>
 #include "atomic_mutex.h"
 
-static std::atomic<bool> critical;
+static bool critical;
 
 static unsigned long N_THREADS;
 static unsigned long N_ROUNDS;

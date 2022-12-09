@@ -8,7 +8,7 @@
 #include "transactional_lock_guard.h"
 #include "transactional_mutex_storage.h"
 
-static std::atomic<bool> critical;
+static bool critical;
 
 constexpr unsigned N_THREADS = 30;
 constexpr unsigned N_ROUNDS = 100;

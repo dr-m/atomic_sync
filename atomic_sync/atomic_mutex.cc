@@ -80,13 +80,18 @@ void mutex_storage<T>::wait_and_lock() noexcept
     {
       this->wait(lk);
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
-    reload:
+# ifdef __SANITIZE_THREAD__
+      if (false)
+# endif
+      reload:
+        __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
 #endif
       lk = this->load(std::memory_order_relaxed);
     }
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     else
     {
+      __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
 # ifdef IF_FETCH_OR_GOTO
       static_assert(HOLDER == (1U << 31), "compatibility");
       IF_FETCH_OR_GOTO(*this, 31, reload);
@@ -95,18 +100,27 @@ void mutex_storage<T>::wait_and_lock() noexcept
         goto reload;
 # endif
       std::atomic_thread_fence(std::memory_order_acquire);
+      __tsan_mutex_post_lock(this, 0, 0);
       return;
     }
 #else
-    else if (!((lk = this->fetch_or(HOLDER, std::memory_order_relaxed)) &
-               HOLDER))
-    {
-      assert(lk);
-      std::atomic_thread_fence(std::memory_order_acquire);
-      return;
-    }
     else
-      assert(~HOLDER & lk);
+    {
+      __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
+      if (!((lk = this->fetch_or(HOLDER, std::memory_order_relaxed)) &
+            HOLDER))
+      {
+        assert(lk);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        __tsan_mutex_post_lock(this, 0, 0);
+        return;
+      }
+      else
+      {
+        __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
+        assert(~HOLDER & lk);
+      }
+    }
 #endif
   }
 }
@@ -134,6 +148,7 @@ template<typename T> void mutex_storage<T>::spin_wait_and_lock() noexcept
       lk = this->load(std::memory_order_relaxed);
     else
     {
+      __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
 #ifdef IF_NOT_FETCH_OR_GOTO
       static_assert(HOLDER == (1U << 31), "compatibility");
       IF_NOT_FETCH_OR_GOTO(*this, 31, acquired);
@@ -142,6 +157,7 @@ template<typename T> void mutex_storage<T>::spin_wait_and_lock() noexcept
       if (!((lk = this->fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
         goto acquired;
 #endif
+      __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
 # ifdef _WIN32
       YieldProcessor();
 # elif defined __GNUC__ && defined _ARCH_PWR8
@@ -161,23 +177,32 @@ template<typename T> void mutex_storage<T>::spin_wait_and_lock() noexcept
     {
       this->wait(lk);
 #ifdef IF_FETCH_OR_GOTO
-    reload:
+# ifdef __SANITIZE_THREAD__
+      if (false)
+# endif
+      reload:
+        __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
 #endif
       lk = this->load(std::memory_order_relaxed);
     }
     else
     {
+      __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
 #ifdef IF_FETCH_OR_GOTO
       static_assert(HOLDER == (1U << 31), "compatibility");
       IF_FETCH_OR_GOTO(*this, 31, reload);
 #else
       if ((lk = this->fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER)
+      {
+        __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
         continue;
+      }
       else
         assert(lk);
 #endif
     acquired:
       std::atomic_thread_fence(std::memory_order_acquire);
+      __tsan_mutex_post_lock(this, __tsan_mutex_try_lock, 0);
       return;
     }
   }
