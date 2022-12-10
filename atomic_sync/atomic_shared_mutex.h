@@ -93,10 +93,12 @@ class atomic_shared_mutex : public storage
   /** Increment the shared lock count while holding the mutex */
   void shared_acquire() noexcept
   {
+    __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
 #ifndef NDEBUG
     type lk =
 #endif
       this->fetch_add(WAITER, std::memory_order_acquire);
+    __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
     assert(lk < X - WAITER);
   }
 
@@ -104,6 +106,7 @@ class atomic_shared_mutex : public storage
   void exclusive_acquire() noexcept
   {
     type lk;
+    __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
     as a loop around LOCK CMPXCHG. In this particular case, toggling the
@@ -114,13 +117,25 @@ class atomic_shared_mutex : public storage
     else
 #endif
       lk = this->fetch_or(X, std::memory_order_acquire);
-    if (lk)
+    if (lk) {
+      __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
+      __tsan_mutex_pre_lock(this, 0);
       exclusive_lock_wait(lk);
+      __tsan_mutex_post_lock(this, 0, 0);
+    } else
+      __tsan_mutex_post_lock(this, __tsan_mutex_try_lock, 0);
   }
 
 public:
+#ifdef __SANITIZE_THREAD__
+  atomic_shared_mutex()
+  { __tsan_mutex_create(this, __tsan_mutex_linker_init); }
+  ~atomic_shared_mutex()
+  { __tsan_mutex_destroy(this, __tsan_mutex_linker_init); }
+#else
   /** Default constructor */
   constexpr atomic_shared_mutex() = default;
+#endif
   /** No copy constructor */
   atomic_shared_mutex(const atomic_shared_mutex&) = delete;
   /** No assignment operator */
@@ -131,11 +146,15 @@ public:
   bool try_lock_shared() noexcept
   {
     type lk = 0;
+    __tsan_mutex_pre_lock(this, __tsan_mutex_try_read_lock);
     while (!this->compare_exchange_weak(lk, lk + WAITER,
                                         std::memory_order_acquire,
                                         std::memory_order_relaxed))
-      if (lk & X)
+      if (lk & X) {
+        __tsan_mutex_post_lock(this, __tsan_mutex_try_read_lock_failed, 0);
         return false;
+      }
+    __tsan_mutex_post_lock(this, __tsan_mutex_try_read_lock, 0);
     return true;
   }
 
@@ -145,10 +164,12 @@ public:
   {
     if (!this->ex.try_lock())
       return false;
+    __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
 #ifndef NDEBUG
     type lk =
 #endif
     this->fetch_add(WAITER, std::memory_order_acquire);
+    __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
     assert(lk < X - WAITER);
     return true;
   }
@@ -159,10 +180,15 @@ public:
   {
     if (!this->ex.try_lock())
       return false;
+
+    __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
     type lk = 0;
     if (compare_exchange_strong(lk, X, std::memory_order_acquire,
-                                std::memory_order_relaxed))
+                                std::memory_order_relaxed)) {
+      __tsan_mutex_post_lock(this, __tsan_mutex_try_lock, 0);
       return true;
+    }
+    __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
     this->ex.unlock();
     return false;
   }
@@ -184,16 +210,24 @@ public:
   void update_lock_upgrade() noexcept
   {
     assert(is_ex_locked());
+    __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
+    __tsan_mutex_pre_lock(this, 0);
     type lk = this->fetch_add(X - WAITER, std::memory_order_acquire);
+    __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
     if (lk != WAITER)
       exclusive_lock_wait(lk - WAITER);
+    __tsan_mutex_post_lock(this, 0, 0);
   }
   /** Downgrade an exclusive lock to update. */
   void lock_update_downgrade() noexcept
   {
     assert(is_ex_locked());
     assert(is_exclusively_locked());
+    __tsan_mutex_pre_unlock(this, 0);
+    __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
     this->store(WAITER, std::memory_order_release);
+    __tsan_mutex_post_unlock(this, 0);
+    __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
     /* Note: Any pending lock_shared() will not be woken up until
        unlock_update() */
   }
@@ -201,18 +235,26 @@ public:
   /** Release a shared lock. */
   void unlock_shared() noexcept
   {
+    __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
     type lk = this->fetch_sub(WAITER, std::memory_order_release);
+    __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
     assert(~X & lk);
     if (lk == X + WAITER)
+    {
+      __tsan_mutex_pre_signal(this, 0);
       this->notify_one();
+      __tsan_mutex_post_signal(this, 0);
+    }
   }
   /** Release an update lock. */
   void unlock_update() noexcept
   {
+    __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
 #ifndef NDEBUG
     type lk =
 #endif
       this->fetch_sub(WAITER, std::memory_order_release);
+    __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
     assert(lk);
     assert(lk < X);
     this->ex.unlock();
@@ -221,7 +263,9 @@ public:
   void unlock() noexcept
   {
     assert(is_exclusively_locked());
+    __tsan_mutex_pre_unlock(this, 0);
     this->store(0, std::memory_order_release);
+    __tsan_mutex_post_unlock(this, 0);
     this->ex.unlock();
   }
 };

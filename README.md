@@ -9,22 +9,30 @@ operations, such as lock acquisition.
 In environments where a system call like the Linux `futex` is available,
 `std::atomic::wait()` and `std::atomic::notify_one()` can be implemented by it.
 
-This project defines the following zero-initialized synchronization primitives:
-* `mutex_storage`: A wrapper of `std::atomic` (default: 4 bytes)
-* `atomic_mutex`: A non-recursive mutex in `mutex_storage` that supports the
-transfer of lock ownership (`lock()` and `unlock()` in different threads)
-* `atomic_shared_mutex`: A non-recursive rw-lock or
-(shared,update,exclusive) lock in 2 `mutex_storage` that supports the transfer
-of lock ownership.
+Our alternatives to the standard mutexes are non-recursive and support
+the transfer of lock ownership (`unlock()` in a different thread than
+`lock()`):
+* `atomic_mutex`: Compatible with `std::mutex`.
+* `atomic_shared_mutex`: Extends `std::shared_mutex` with `lock_update()`,
+which is compatible with `lock_shared()`. This mode can be used for
+exclusively locking part of a resource while other parts can be safely
+accessed by shared lock holders.
+
+For maximal flexibility, a template parameter can be specified. We
+provide an interface `mutex_storage` and a reference implementation
+based on C++11 or C++20 `std::atomic` (default: 4 bytes).
 
 Some examples of extending or using the primitives are provided:
 * `atomic_condition_variable`: A condition variable in 4 bytes that
 goes with (`atomic_mutex` or `atomic_shared_mutex`).
 * `atomic_recursive_shared_mutex`: A variant of `atomic_shared_mutex`
-that supports re-entrant acquisition of U or X locks.
+that supports re-entrant `lock()` and `lock_update()`.
 * `transactional_lock_guard`, `transactional_shared_lock_guard`:
 Similar to `std::lock_guard` and `std::shared_lock_guard`, but with
 optional support for lock elision using transactional memory.
+* `transactional_mutex_storage`: An extension of `mutex_storage` with
+the predicates `is_locked()` and `is_locked_or_waiting()`, to support
+lock elision using transactional memory.
 
 You can try it out as follows:
 ```sh
@@ -69,7 +77,7 @@ to implement a hash table with one mutex per cache line
 
 The implementation with C++20 `std::atomic` has been tested with:
 * Microsoft Visual Studio 2019
-* GCC 11.2.0 on GNU/Linux
+* GCC 11.2.0, GCC 12.2.0 on GNU/Linux
 * clang++-12, clang++-13 using libstdc++-11-dev on Debian GNU/Linux
 
 The implementation with C++11 `std::atomic` and `futex` is expected
@@ -109,6 +117,31 @@ The subdirectory `examples` contains some additional code that
 demonstrates how `atomic_mutex` or `atomic_shared_mutex` can be used.
 
 The subdirectory `test` contains test programs.
+
+### ThreadSanitizer notes
+
+The clang and GCC option `-fsanitize=thread` currently requires some
+extra instrumentation in order to recognize that `atomic_mutex` and
+`atomic_shared_mutex` actually implement locks. This instrumentation
+could also offer the benefit of catching lock-order-inversion
+(potential deadlock).
+
+The `atomic_shared_mutex` is instrumented as two locks, corresponding
+to its internal implementation. An exclusive `lock()` internally
+acquires a lock on both the data member `ex` and the base
+`mutex_storage`. A `lock_shared()` operates on the base
+`mutex_storage`. If the `mutex_storage` is write-locked, then
+`lock_shared()` will momentarily acquire and release `ex` in order to
+wait for `unlock()`. The third lock mode `lock_update()` locks `ex`
+and acquires a shared lock on the base `mutex_storage`.
+
+For `atomic_shared_mutex`, the ThreadSanitizer instrumentation
+includes a flag `__tsan_mutex_try_read_lock` that is not available in
+GCC 11.
+
+The instrumentation has been tested with clang++-14, clang++-15, and
+GCC 12. The program `test_mutex`, which does not use
+`atomic_shared_mutex`, has been tested with GCC 11 `-fsanitize=thread`.
 
 ### Lock elision
 
