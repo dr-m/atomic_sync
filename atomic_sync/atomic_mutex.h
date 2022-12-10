@@ -41,10 +41,20 @@ class atomic_mutex : public storage
   static constexpr auto WAITER = storage::WAITER;
   static constexpr auto HOLDER = storage::HOLDER;
 
+  /** @return whether the mutex was acquired */
+  bool try_lock_low() noexcept
+  {
+    type lk = 0;
+    return this->compare_exchange_strong(lk, HOLDER + WAITER,
+                                         std::memory_order_acquire,
+                                         std::memory_order_relaxed);
+  }
 public:
 #ifdef __SANITIZE_THREAD__
-  atomic_mutex() { __tsan_mutex_create(this, __tsan_mutex_linker_init); }
-  ~atomic_mutex() { __tsan_mutex_destroy(this, __tsan_mutex_linker_init); }
+  constexpr atomic_mutex()
+  { __tsan_mutex_create(this, __tsan_mutex_linker_init); }
+  constexpr ~atomic_mutex()
+  { __tsan_mutex_destroy(this, __tsan_mutex_linker_init); }
 #else
   /** Default constructor */
   constexpr atomic_mutex() = default;
@@ -57,19 +67,28 @@ public:
   /** @return whether the mutex was acquired */
   bool try_lock() noexcept
   {
-    type lk = 0;
     __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
-    bool locked = this->compare_exchange_strong(lk, HOLDER + WAITER,
-                                                std::memory_order_acquire,
-                                                std::memory_order_relaxed);
+    bool locked = try_lock_low();
     __tsan_mutex_post_lock(this, locked
                            ? __tsan_mutex_try_lock
                            : __tsan_mutex_try_lock_failed, 0);
     return locked;
   }
 
-  void lock() noexcept { if (!try_lock()) this->wait_and_lock(); }
-  void spin_lock() noexcept { if (!try_lock()) this->spin_wait_and_lock(); }
+  void lock() noexcept
+  {
+    __tsan_mutex_pre_lock(this, 0);
+    if (!try_lock_low())
+      this->wait_and_lock();
+    __tsan_mutex_post_lock(this, 0, 0);
+  }
+  void spin_lock() noexcept
+  {
+    __tsan_mutex_pre_lock(this, 0);
+    if (!try_lock_low())
+      this->spin_wait_and_lock();
+    __tsan_mutex_post_lock(this, 0, 0);
+  }
   void unlock() noexcept
   {
     __tsan_mutex_pre_unlock(this, 0);
