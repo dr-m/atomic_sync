@@ -25,6 +25,8 @@ based on C++11 or C++20 `std::atomic` (default: 4 bytes).
 Some examples of extending or using the primitives are provided:
 * `atomic_condition_variable`: A condition variable in 4 bytes that
 goes with (`atomic_mutex` or `atomic_shared_mutex`).
+Unlike the potentially larger `std::condition_variable_any`,
+this supports `wait_shared()` and `is_waiting()` (for lock elision).
 * `atomic_recursive_shared_mutex`: A variant of `atomic_shared_mutex`
 that supports re-entrant `lock()` and `lock_update()`.
 * `transactional_lock_guard`, `transactional_shared_lock_guard`:
