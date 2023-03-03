@@ -5,15 +5,14 @@
 #include "atomic_shared_mutex.h"
 #include "atomic_condition_variable.h"
 #include "transactional_lock_guard.h"
-#include "transactional_mutex_storage.h"
 
 static bool critical;
 
 constexpr unsigned N_THREADS = 30;
 constexpr unsigned N_ROUNDS = 100;
 
-static atomic_mutex<transactional_mutex_storage> m;
-static atomic_shared_mutex<transactional_shared_mutex_storage> sux;
+static atomic_mutex m;
+static atomic_shared_mutex sux;
 static atomic_condition_variable cv;
 
 TRANSACTIONAL_TARGET static void test_condition_variable()

@@ -32,9 +32,6 @@ that supports re-entrant `lock()` and `lock_update()`.
 * `transactional_lock_guard`, `transactional_shared_lock_guard`:
 Similar to `std::lock_guard` and `std::shared_lock_guard`, but with
 optional support for lock elision using transactional memory.
-* `transactional_mutex_storage`: An extension of `mutex_storage` with
-the predicates `is_locked()` and `is_locked_or_waiting()`, to support
-lock elision using transactional memory.
 
 You can try it out as follows:
 ```sh

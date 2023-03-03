@@ -5,6 +5,11 @@ template<typename T = uint32_t>
 struct shared_mutex_storage : mutex_storage<T>
 {
   atomic_mutex<mutex_storage<T>> ex;
+
+  constexpr bool is_locked() const noexcept
+  { return this->load(std::memory_order_acquire) == this->HOLDER; }
+  constexpr bool is_locked_or_waiting() const noexcept
+  { return ex.load(std::memory_order_acquire) || this->is_locked(); }
 };
 
 /** Slim Shared/Update/Exclusive lock without recursion (re-entrancy).

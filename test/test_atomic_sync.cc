@@ -6,7 +6,6 @@
 #include "atomic_recursive_shared_mutex.h"
 #include "atomic_condition_variable.h"
 #include "transactional_lock_guard.h"
-#include "transactional_mutex_storage.h"
 
 static bool critical;
 
@@ -22,7 +21,7 @@ constexpr unsigned M_ROUNDS = 100;
 # define atomic_spin_shared_mutex atomic_shared_mutex
 # define atomic_spin_recursive_shared_mutex atomic_recursive_shared_mutex
 #endif
-static atomic_spin_mutex<transactional_mutex_storage> m;
+static atomic_spin_mutex m;
 
 #if !defined WITH_ELISION || defined NDEBUG
 # define transactional_assert(x) assert(x)
@@ -47,7 +46,7 @@ abort:
 #endif
 }
 
-static atomic_spin_shared_mutex<transactional_shared_mutex_storage> sux;
+static atomic_spin_shared_mutex sux;
 
 TRANSACTIONAL_TARGET static void test_shared_mutex()
 {
@@ -87,8 +86,7 @@ abort:
 #endif
 }
 
-static atomic_spin_recursive_shared_mutex<transactional_shared_mutex_storage>
-recursive_sux;
+static atomic_spin_recursive_shared_mutex recursive_sux;
 
 static void test_recursive_shared_mutex()
 {

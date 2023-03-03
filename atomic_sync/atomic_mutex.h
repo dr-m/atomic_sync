@@ -13,6 +13,11 @@ struct mutex_storage : std::atomic<T>
 
   static unsigned spin_rounds;
 
+  constexpr bool is_locked_or_waiting() const noexcept
+  { return this->load(std::memory_order_acquire) != 0; }
+  constexpr bool is_locked() const noexcept
+  { return this->load(std::memory_order_acquire) & HOLDER; }
+
 #if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
   void notify_one() noexcept;
   inline void wait(T old) const noexcept;
