@@ -86,9 +86,9 @@ class atomic_shared_mutex : public storage
   }
   /** Wait for a shared lock to be granted (any X lock to be released),
   with initial spinloop. */
-  void spin_shared_lock_wait() noexcept
+  void spin_shared_lock_wait(unsigned spin_rounds) noexcept
   {
-    this->ex.spin_lock();
+    this->ex.spin_lock(spin_rounds);
     bool acquired = try_lock_shared();
     this->ex.unlock();
     if (!acquired)
@@ -200,16 +200,18 @@ public:
 
   /** Acquire a shared lock (which can coexist with S or U locks). */
   void lock_shared() noexcept { if (!try_lock_shared()) shared_lock_wait(); }
-  void spin_lock_shared() noexcept
-  { if (!try_lock_shared()) spin_shared_lock_wait(); }
+  void spin_lock_shared(unsigned spin_rounds) noexcept
+  { if (!try_lock_shared()) spin_shared_lock_wait(spin_rounds); }
 
   /** Acquire an update lock (which can coexist with S locks). */
   void lock_update() noexcept { this->ex.lock(); shared_acquire(); }
-  void spin_lock_update() noexcept { this->ex.spin_lock(); shared_acquire(); }
+  void spin_lock_update(unsigned spin_rounds) noexcept
+  { this->ex.spin_lock(spin_rounds); shared_acquire(); }
 
   /** Acquire an exclusive lock. */
   void lock() noexcept { this->ex.lock(); exclusive_acquire(); }
-  void spin_lock() noexcept { storage::ex.spin_lock(); exclusive_acquire(); }
+  void spin_lock(unsigned spin_rounds) noexcept
+  { storage::ex.spin_lock(spin_rounds); exclusive_acquire(); }
 
   /** Upgrade an update lock to exclusive. */
   void update_lock_upgrade() noexcept
@@ -273,14 +275,4 @@ public:
     __tsan_mutex_post_unlock(this, 0);
     this->ex.unlock();
   }
-};
-
-/** Like atomic_shared_mutex, but with spinloops */
-template<typename storage = shared_mutex_storage<>>
-class atomic_spin_shared_mutex : public atomic_shared_mutex<storage>
-{
-public:
-  void lock() noexcept { this->spin_lock(); }
-  void shared_lock() noexcept { this->spin_lock_shared(); }
-  void update_lock() noexcept { this->spin_lock_update(); }
 };

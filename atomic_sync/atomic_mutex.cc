@@ -112,17 +112,16 @@ void mutex_storage<T>::wait_and_lock() noexcept
 }
 
 #ifndef SPINLOOP
-template<typename T> void mutex_storage<T>::spin_wait_and_lock() noexcept
+template<typename T>
+void mutex_storage<T>::spin_wait_and_lock(unsigned) noexcept
 { wait_and_lock(); }
 #else
-/** The count of 50 seems to yield the best NUMA performance on
-Intel Xeon E5-2630 v4 (Haswell microarchitecture) */
-template<> unsigned mutex_storage<uint32_t>::spin_rounds = SPINLOOP;
 # ifdef _WIN32
 #  include <windows.h>
 # endif
 
-template<typename T> void mutex_storage<T>::spin_wait_and_lock() noexcept
+template<typename T>
+void mutex_storage<T>::spin_wait_and_lock(unsigned spin_rounds) noexcept
 {
   T lk = WAITER + this->fetch_add(WAITER, std::memory_order_relaxed);
 
@@ -196,5 +195,5 @@ template<typename T> void mutex_storage<T>::lock_wait(T lk) noexcept
 }
 
 template void mutex_storage<uint32_t>::wait_and_lock() noexcept;
-template void mutex_storage<uint32_t>::spin_wait_and_lock() noexcept;
+template void mutex_storage<uint32_t>::spin_wait_and_lock(unsigned) noexcept;
 template void mutex_storage<uint32_t>::lock_wait(uint32_t) noexcept;

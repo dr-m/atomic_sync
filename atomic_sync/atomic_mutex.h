@@ -11,8 +11,6 @@ struct mutex_storage : std::atomic<T>
   static constexpr type HOLDER = type(~(type(~type(0)) >> 1));
   static constexpr type WAITER = 1;
 
-  static unsigned spin_rounds;
-
   constexpr bool is_locked_or_waiting() const noexcept
   { return this->load(std::memory_order_acquire) != 0; }
   constexpr bool is_locked() const noexcept
@@ -24,7 +22,7 @@ struct mutex_storage : std::atomic<T>
 #endif
 
   void wait_and_lock() noexcept;
-  void spin_wait_and_lock() noexcept;
+  void spin_wait_and_lock(unsigned spin_rounds) noexcept;
 
   // for atomic_shared_mutex
   void lock_wait(T lk) noexcept;
@@ -87,11 +85,11 @@ public:
       this->wait_and_lock();
     __tsan_mutex_post_lock(this, 0, 0);
   }
-  void spin_lock() noexcept
+  void spin_lock(unsigned spin_rounds) noexcept
   {
     __tsan_mutex_pre_lock(this, 0);
     if (!try_lock_low())
-      this->spin_wait_and_lock();
+      this->spin_wait_and_lock(spin_rounds);
     __tsan_mutex_post_lock(this, 0, 0);
   }
   void unlock() noexcept
@@ -108,12 +106,4 @@ public:
       __tsan_mutex_post_signal(this, 0);
     }
   }
-};
-
-/** Like atomic_mutex, but with a spinloop in lock() */
-template<typename storage = mutex_storage<>>
-class atomic_spin_mutex : public atomic_mutex<storage>
-{
-public:
-  void lock() noexcept { atomic_mutex<storage>::spin_lock(); }
 };

@@ -13,8 +13,36 @@ constexpr unsigned N_THREADS = 30;
 constexpr unsigned N_ROUNDS = 100;
 constexpr unsigned M_ROUNDS = 100;
 
-#ifdef WITH_SPINLOOP
+#if defined WITH_SPINLOOP && defined SPINLOOP
 # define ATOMIC_MUTEX_NAME(m) "atomic_spin_" #m
+/** Like atomic_mutex, but with a spinloop in lock() */
+template<typename storage = mutex_storage<>>
+class atomic_spin_mutex : public atomic_mutex<storage>
+{
+public:
+  void lock() noexcept { atomic_mutex<storage>::spin_lock(SPINLOOP); }
+};
+/** Like atomic_shared_mutex, but with spinloops */
+template<typename storage = shared_mutex_storage<>>
+class atomic_spin_shared_mutex : public atomic_shared_mutex<storage>
+{
+public:
+  void lock() noexcept { this->spin_lock(SPINLOOP); }
+  void shared_lock() noexcept { this->spin_lock_shared(SPINLOOP); }
+  void update_lock() noexcept { this->spin_lock_update(SPINLOOP); }
+};
+template<typename storage = shared_mutex_storage<>>
+class atomic_spin_recursive_shared_mutex :
+  public atomic_recursive_shared_mutex<storage>
+{
+public:
+  void lock_shared() noexcept { this->spin_lock_shared(SPINLOOP); }
+  void lock_update() noexcept { this->spin_lock_update(SPINLOOP); }
+  void lock_update_disowned() noexcept
+  { this->spin_lock_update_disowned(SPINLOOP); }
+  void lock() noexcept { this->spin_lock(SPINLOOP); }
+  void lock_disowned() noexcept { this->spin_lock_disowned(SPINLOOP); }
+};
 #else
 # define ATOMIC_MUTEX_NAME(m) "atomic_" #m
 # define atomic_spin_mutex atomic_mutex

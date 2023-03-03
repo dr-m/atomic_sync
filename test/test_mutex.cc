@@ -26,6 +26,15 @@ static void test_atomic_mutex()
   }
 }
 
+#if defined WITH_SPINLOOP && defined SPINLOOP
+/** Like atomic_mutex, but with a spinloop in lock() */
+template<typename storage = mutex_storage<>>
+class atomic_spin_mutex : public atomic_mutex<storage>
+{
+public:
+  void lock() noexcept { atomic_mutex<storage>::spin_lock(SPINLOOP); }
+};
+
 static atomic_spin_mutex<> a_sm;
 
 static void test_atomic_spin_mutex()
@@ -38,6 +47,7 @@ static void test_atomic_spin_mutex()
     critical = false;
   }
 }
+#endif
 
 static std::mutex m;
 
@@ -80,13 +90,14 @@ int main(int argc, char **argv)
   for (auto i = N_THREADS; i--; )
     t[i].join();
 
+#if defined WITH_SPINLOOP && defined SPINLOOP
   const auto start_atomic_spin_mutex = std::chrono::steady_clock::now();
 
   for (auto i = N_THREADS; i--; )
     t[i] = std::thread(test_atomic_spin_mutex);
   for (auto i = N_THREADS; i--; )
     t[i].join();
-
+#endif
   const auto start_mutex = std::chrono::steady_clock::now();
 
   for (auto i = N_THREADS; i--; )
@@ -96,10 +107,16 @@ int main(int argc, char **argv)
 
   const auto start_output = std::chrono::steady_clock::now();
   using duration = std::chrono::duration<double>;
+#if defined WITH_SPINLOOP && defined SPINLOOP
   fprintf(stderr, "atomic_mutex: %lfs, atomic_spin_mutex: %lfs, mutex: %lfs\n",
           duration{start_atomic_spin_mutex - start_atomic_mutex}.count(),
           duration{start_mutex - start_atomic_spin_mutex}.count(),
           duration{start_output - start_mutex}.count());
+#else
+  fprintf(stderr, "atomic_mutex: %lfs, mutex: %lfs\n",
+          duration{start_mutex - start_atomic_mutex}.count(),
+          duration{start_output - start_mutex}.count());
+#endif
 
   return 0;
 }
