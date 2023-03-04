@@ -169,21 +169,21 @@ int main(int, char **)
   fputs(ATOMIC_MUTEX_NAME(mutex), stderr);
 #endif
 
-  assert(!m.is_locked_or_waiting());
+  assert(!m.native_handle().is_locked_or_waiting());
   for (auto i = N_THREADS; i--; )
     t[i]= std::thread(test_atomic_mutex);
   for (auto i = N_THREADS; i--; )
     t[i].join();
-  assert(!m.is_locked_or_waiting());
+  assert(!m.native_handle().is_locked_or_waiting());
 
   fputs(", " ATOMIC_MUTEX_NAME(shared_mutex), stderr);
 
-  assert(!sux.is_locked_or_waiting());
+  assert(!sux.native_handle().is_locked_or_waiting());
   for (auto i = N_THREADS; i--; )
     t[i]= std::thread(test_shared_mutex);
   for (auto i = N_THREADS; i--; )
     t[i].join();
-  assert(!sux.is_locked_or_waiting());
+  assert(!sux.native_handle().is_locked_or_waiting());
 
   fputs(", " ATOMIC_MUTEX_NAME(recursive_shared_mutex), stderr);
 

@@ -64,7 +64,7 @@ We define spin_lock(), which is like lock(), but with an initial spinloop.
 The implementation counts pending lock() requests, so that unlock()
 will only invoke notify_one() when pending requests exist. */
 template<typename storage = mutex_storage<>>
-class atomic_mutex : public storage
+class atomic_mutex : storage
 {
 public:
 #ifdef __SANITIZE_THREAD__
@@ -80,6 +80,8 @@ public:
   atomic_mutex(const atomic_mutex&) = delete;
   /** No assignment operator */
   atomic_mutex& operator=(const atomic_mutex&) = delete;
+
+  constexpr const storage& native_handle() const { return *this; }
 
   /** @return whether the mutex was acquired */
   bool try_lock() noexcept

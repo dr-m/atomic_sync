@@ -97,14 +97,14 @@ class atomic_recursive_shared_mutex : atomic_shared_mutex<storage>
 public:
   void init() noexcept
   {
-    assert(!storage::is_locked_or_waiting());
+    assert(!this->native_handle().is_locked_or_waiting());
     assert(!recursive);
     assert(writer == std::thread::id{});
   }
 
   void destroy() noexcept
   {
-    assert(!storage::is_locked_or_waiting());
+    assert(!this->native_handle().is_locked_or_waiting());
     assert(!recursive);
   }
 

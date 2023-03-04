@@ -18,7 +18,7 @@ public:
   constexpr bool is_locked() const noexcept
   { return this->load(std::memory_order_acquire) == X; }
   constexpr bool is_locked_or_waiting() const noexcept
-  { return ex.is_locked_or_waiting() || this->is_locked(); }
+  { return ex.native_handle().is_locked_or_waiting() || this->is_locked(); }
 protected:
   void lock_outer() noexcept { ex.lock(); }
   void spin_lock_outer(unsigned spin_rounds) noexcept
@@ -78,7 +78,7 @@ protected:
   /** For atomic_shared_mutex::update_lock() */
   void update_lock_inner() noexcept
   {
-    assert(ex.is_locked());
+    assert(ex.native_handle().is_locked());
 #ifndef NDEBUG
     type lk =
 #endif
@@ -88,20 +88,20 @@ protected:
   /** For atomic_shared_mutex::update_lock_upgrade() */
   type update_lock_upgrade_inner() noexcept
   {
-    assert(ex.is_locked());
+    assert(ex.native_handle().is_locked());
     return this->fetch_add(X - WAITER, std::memory_order_acquire) - WAITER;
   }
   /** For atomic_shared_mutex::update_lock_downgrade() */
   void update_lock_downgrade_inner() noexcept
   {
-    assert(ex.is_locked());
+    assert(ex.native_handle().is_locked());
     assert(this->is_locked());
     this->store(WAITER, std::memory_order_release);
   }
   /** For atomic_shared_mutex::unlock_update() */
   void update_unlock_inner() noexcept
   {
-    assert(ex.is_locked());
+    assert(ex.native_handle().is_locked());
 #ifndef NDEBUG
     type lk =
 #endif
@@ -149,7 +149,7 @@ exclusive locking, and another for waking up an exclusive lock waiter
 that is already holding the mutex, once the last shared lock is released.
 We count shared locks to have necessary and sufficient notify_one() calls. */
 template<typename storage = shared_mutex_storage<>>
-class atomic_shared_mutex : public storage
+class atomic_shared_mutex : storage
 {
   /** Wait for a shared lock to be granted (any X lock to be released) */
   void shared_lock_wait() noexcept
@@ -207,6 +207,8 @@ public:
   atomic_shared_mutex(const atomic_shared_mutex&) = delete;
   /** No assignment operator */
   atomic_shared_mutex& operator=(const atomic_shared_mutex&) = delete;
+
+  constexpr const storage& native_handle() const { return *this; }
 
   /** Try to acquire a shared lock.
   @return whether the S lock was acquired */
