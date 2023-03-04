@@ -2,14 +2,111 @@
 #include "atomic_mutex.h"
 
 template<typename T = uint32_t>
-struct shared_mutex_storage : mutex_storage<T>
+class shared_mutex_storage : public mutex_storage<T>
 {
   atomic_mutex<mutex_storage<T>> ex;
+  using type = T;
+  static constexpr type X = type(~(type(~type(0)) >> 1));
+  static constexpr type WAITER = 1;
 
+public:
   constexpr bool is_locked() const noexcept
   { return this->is_locked_not_waiting(); }
   constexpr bool is_locked_or_waiting() const noexcept
   { return ex.is_locked_or_waiting() || this->is_locked(); }
+protected:
+  void lock_outer() noexcept { ex.lock(); }
+  void spin_lock_outer(unsigned spin_rounds) noexcept
+  { ex.spin_lock(spin_rounds); }
+  void unlock_outer() noexcept { ex.unlock(); }
+
+  /** Try to acquire a shared mutex
+  @return whether the shared mutex was acquired */
+  bool shared_lock_inner() noexcept
+  {
+    type lk = 0;
+    while (!this->compare_exchange_weak(lk, lk + WAITER,
+                                        std::memory_order_acquire,
+                                        std::memory_order_relaxed))
+      if (lk & X)
+        return false;
+    return true;
+  }
+  /** Release a shared mutex
+  @return whether an exclusive mutex is being waited for */
+  bool shared_unlock_inner() noexcept
+  {
+    type lk = this->fetch_sub(WAITER, std::memory_order_release);
+    assert(~X & lk);
+    return lk == X + WAITER;
+  }
+
+  /** For atomic_shared_mutex::lock()
+  @return lock word to be passed to lock_inner_wait()
+  @retval 0 if the exclusive lock was granted */
+  type lock_inner() noexcept
+  {
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
+    /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
+    as a loop around LOCK CMPXCHG. In this particular case, toggling the
+    most significant bit using fetch_add() is equivalent, and is
+    translated into a simple LOCK XADD. */
+    return this->fetch_add(X, std::memory_order_acquire);
+#endif
+    return this->fetch_or(X, std::memory_order_acquire);
+  }
+
+  /** For atomic_shared_mutex::try_lock()
+  @return whether the exclusive lock was acquired */
+  bool try_lock_inner() noexcept
+  {
+    type lk = 0;
+    return compare_exchange_strong(lk, X, std::memory_order_acquire,
+                                   std::memory_order_relaxed);
+  }
+
+  /** Wait for an exclusive lock to be granted (any S locks to be released)
+  @param lk  recent number of conflicting S lock holders */
+  void lock_inner_wait(type lk) noexcept;
+
+  /** Release an exclusive lock of an atomic_shared_mutex */
+  void unlock_inner() noexcept
+  { this->store(0, std::memory_order_release); }
+
+  /** For atomic_shared_mutex::update_lock() */
+  void update_lock_inner() noexcept
+  {
+    assert(ex.is_locked());
+#ifndef NDEBUG
+    type lk =
+#endif
+      this->fetch_add(WAITER, std::memory_order_acquire);
+    assert(lk < X - WAITER);
+  }
+  /** For atomic_shared_mutex::update_lock_upgrade() */
+  type update_lock_upgrade_inner() noexcept
+  {
+    assert(ex.is_locked());
+    return this->fetch_add(X - WAITER, std::memory_order_acquire) - WAITER;
+  }
+  /** For atomic_shared_mutex::update_lock_downgrade() */
+  void update_lock_downgrade_inner() noexcept
+  {
+    assert(ex.is_locked());
+    assert(this->is_locked_not_waiting());
+    this->store(WAITER, std::memory_order_release);
+  }
+  /** For atomic_shared_mutex::unlock_update() */
+  void update_unlock_inner() noexcept
+  {
+    assert(ex.is_locked());
+#ifndef NDEBUG
+    type lk =
+#endif
+      this->fetch_sub(WAITER, std::memory_order_release);
+    assert(lk);
+    assert(lk < X);
+  }
 };
 
 /** Slim Shared/Update/Exclusive lock without recursion (re-entrancy).
@@ -52,53 +149,43 @@ We count shared locks to have necessary and sufficient notify_one() calls. */
 template<typename storage = shared_mutex_storage<>>
 class atomic_shared_mutex : public storage
 {
-#ifndef NDEBUG
-  constexpr bool is_ex_locked() const noexcept
-  { return this->ex.is_locked_or_waiting(); }
-  constexpr bool is_exclusively_locked() const noexcept
-  { return this->is_locked_not_waiting(); }
-#endif
-
   /** Wait for a shared lock to be granted (any X lock to be released) */
   void shared_lock_wait() noexcept
   {
     bool acquired;
     do {
-      this->ex.lock();
-      acquired = this->shared_lock_impl();
-      this->ex.unlock();
+      this->lock_outer();
+      acquired = this->shared_lock_inner();
+      this->unlock_outer();
     } while (!acquired);
-    __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
   }
   /** Wait for a shared lock to be granted (any X lock to be released),
   with initial spinloop. */
   void spin_shared_lock_wait(unsigned spin_rounds) noexcept
   {
-    this->ex.spin_lock(spin_rounds);
-    bool acquired = this->shared_lock_impl();
-    this->ex.unlock();
+    this->spin_lock_outer(spin_rounds);
+    bool acquired = this->shared_lock_inner();
+    this->unlock_outer();
     if (!acquired)
       shared_lock_wait();
-    else
-      __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
   }
 
   /** Increment the shared lock count while holding the mutex */
   void shared_acquire() noexcept
   {
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
-    this->update_lock_impl();
+    this->update_lock_inner();
     __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
   }
 
-  /** Acquire an exclusive lock while holding the mutex */
-  void exclusive_acquire() noexcept
+  /** Acquire an exclusive lock while holding lock_outer() */
+  void lock_inner() noexcept
   {
     __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
-    if (auto lk = this->exclusive_lock_impl()) {
+    if (auto lk = storage::lock_inner()) {
       __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
       __tsan_mutex_pre_lock(this, 0);
-      this->exclusive_lock_wait(lk);
+      this->lock_inner_wait(lk);
       __tsan_mutex_post_lock(this, 0, 0);
     } else
       __tsan_mutex_post_lock(this, __tsan_mutex_try_lock, 0);
@@ -124,7 +211,7 @@ public:
   bool try_lock_shared() noexcept
   {
     __tsan_mutex_pre_lock(this, __tsan_mutex_try_read_lock);
-    bool acquired = this->shared_lock_impl();
+    bool acquired = this->shared_lock_inner();
     __tsan_mutex_post_lock(this, acquired
                            ? __tsan_mutex_try_read_lock_failed
                            : __tsan_mutex_try_read_lock, 0);
@@ -138,7 +225,7 @@ public:
     if (!this->ex.try_lock())
       return false;
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
-    this->update_lock_impl();
+    this->update_lock_inner();
     __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
     return true;
   }
@@ -151,12 +238,12 @@ public:
       return false;
 
     __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
-    if (this->exclusive_try_lock_impl()) {
+    if (this->exclusive_try_lock_inner()) {
       __tsan_mutex_post_lock(this, __tsan_mutex_try_lock, 0);
       return true;
     }
     __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
-    this->ex.unlock();
+    this->unlock_outer();
     return false;
   }
 
@@ -164,50 +251,45 @@ public:
   void lock_shared() noexcept
   {
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
-    if (!this->shared_lock_impl())
+    if (!this->shared_lock_inner())
       shared_lock_wait();
-    else
-      __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
+    __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
   }
   void spin_lock_shared(unsigned spin_rounds) noexcept
   {
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
-    if (!this->shared_lock_impl())
+    if (!this->shared_lock_inner())
       spin_shared_lock_wait(spin_rounds);
-    else
-      __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
+    __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
   }
 
   /** Acquire an update lock (which can coexist with S locks). */
-  void lock_update() noexcept { this->ex.lock(); shared_acquire(); }
+  void lock_update() noexcept { this->lock_outer(); shared_acquire(); }
   void spin_lock_update(unsigned spin_rounds) noexcept
-  { this->ex.spin_lock(spin_rounds); shared_acquire(); }
+  { this->spin_lock_outer(spin_rounds); shared_acquire(); }
 
   /** Acquire an exclusive lock. */
-  void lock() noexcept { this->ex.lock(); exclusive_acquire(); }
+  void lock() noexcept { this->lock_outer(); this->lock_inner(); }
   void spin_lock(unsigned spin_rounds) noexcept
-  { storage::ex.spin_lock(spin_rounds); exclusive_acquire(); }
+  { this->spin_lock_outer(spin_rounds); this->lock_inner(); }
 
   /** Upgrade an update lock to exclusive. */
   void update_lock_upgrade() noexcept
   {
-    assert(is_ex_locked());
     __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
     __tsan_mutex_pre_lock(this, 0);
-    auto lk = this->update_lock_upgrade_impl();
+    auto lk = this->update_lock_upgrade_inner();
     __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
     if (lk)
-      this->exclusive_lock_wait(lk);
+      this->lock_inner_wait(lk);
     __tsan_mutex_post_lock(this, 0, 0);
   }
   /** Downgrade an exclusive lock to update. */
   void update_lock_downgrade() noexcept
   {
-    assert(is_ex_locked());
-    assert(is_exclusively_locked());
     __tsan_mutex_pre_unlock(this, 0);
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
-    this->update_lock_downgrade_impl();
+    this->update_lock_downgrade_inner();
     __tsan_mutex_post_unlock(this, 0);
     __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
     /* Note: Any pending lock_shared() will not be woken up until
@@ -218,7 +300,7 @@ public:
   void unlock_shared() noexcept
   {
     __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
-    bool notify = this->shared_unlock_impl();
+    bool notify = this->shared_unlock_inner();
     __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
     if (notify)
     {
@@ -231,17 +313,17 @@ public:
   void unlock_update() noexcept
   {
     __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
-    this->update_unlock_impl();
+    this->update_unlock_inner();
     __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
-    this->ex.unlock();
+    this->unlock_outer();
   }
   /** Release an exclusive lock. */
   void unlock() noexcept
   {
-    assert(is_exclusively_locked());
+    assert(this->is_locked_not_waiting());
     __tsan_mutex_pre_unlock(this, 0);
-    this->exclusive_unlock();
+    this->unlock_inner();
     __tsan_mutex_post_unlock(this, 0);
-    this->ex.unlock();
+    this->unlock_outer();
   }
 };

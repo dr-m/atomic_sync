@@ -4,15 +4,12 @@
 #include "tsan.h"
 
 template<typename T = uint32_t>
-class mutex_storage : std::atomic<T>
+class mutex_storage : protected std::atomic<T>
 {
   using type = T;
 
   static constexpr type HOLDER = type(~(type(~type(0)) >> 1));
   static constexpr type WAITER = 1;
-
-  // for atomic_shared_mutex
-  void lock_wait(T lk) noexcept;
 
 #if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
   void notify_one() noexcept;
@@ -50,93 +47,6 @@ protected:
   }
   /** Notify waiters after one of unlock_impl() returned true */
   void unlock_notify() noexcept { this->notify_one(); }
-
-  /** Try to acquire a shared mutex
-  @return whether the shared mutex was acquired */
-  bool shared_lock_impl() noexcept
-  {
-    type lk = 0;
-    while (!this->compare_exchange_weak(lk, lk + WAITER,
-                                        std::memory_order_acquire,
-                                        std::memory_order_relaxed))
-      if (lk & HOLDER)
-        return false;
-    return true;
-  }
-  /** Release a shared mutex
-  @return whether an exclusive mutex is being waited for */
-  bool shared_unlock_impl() noexcept
-  {
-    type lk = this->fetch_sub(WAITER, std::memory_order_release);
-    assert(~HOLDER & lk);
-    return lk == HOLDER + WAITER;
-  }
-
-  /** For atomic_shared_mutex::lock()
-  @return lock word to be passed to exclusive_lock_wait()
-  @retval 0 if the exclusive lock was granted */
-  type exclusive_lock_impl() noexcept
-  {
-#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
-    /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
-    as a loop around LOCK CMPXCHG. In this particular case, toggling the
-    most significant bit using fetch_add() is equivalent, and is
-    translated into a simple LOCK XADD. */
-    return this->fetch_add(HOLDER, std::memory_order_acquire);
-#endif
-    return this->fetch_or(HOLDER, std::memory_order_acquire);
-  }
-
-  /** For atomic_shared_mutex::try_lock()
-  @return whether the exclusive lock was acquired */
-  bool exclusive_try_lock_impl() noexcept
-  {
-    type lk = 0;
-    return compare_exchange_strong(lk, HOLDER, std::memory_order_acquire,
-                                   std::memory_order_relaxed);
-  }
-
-  /** Wait for an exclusive lock to be granted (any S locks to be released)
-  @param lk  recent number of conflicting S lock holders */
-  void exclusive_lock_wait(type lk) noexcept
-  {
-    assert(lk);
-    assert(lk < HOLDER);
-    lock_wait(lk | HOLDER);
-  }
-
-  /** Release an exclusive lock of an atomic_shared_mutex */
-  void exclusive_unlock() noexcept
-  { this->store(0, std::memory_order_release); }
-
-  /** For atomic_shared_mutex::update_lock() */
-  void update_lock_impl() noexcept
-  {
-#ifndef NDEBUG
-    type lk =
-#endif
-      this->fetch_add(WAITER, std::memory_order_acquire);
-    assert(lk < HOLDER - WAITER);
-  }
-  /** For atomic_shared_mutex::update_lock_upgrade() */
-  type update_lock_upgrade_impl() noexcept
-  {
-    return this->fetch_add(HOLDER - WAITER, std::memory_order_acquire) -
-      WAITER;
-  }
-  /** For atomic_shared_mutex::update_lock_downgrade() */
-  void update_lock_downgrade_impl() noexcept
-  { this->store(WAITER, std::memory_order_release); }
-  /** For atomic_shared_mutex::unlock_update() */
-  void update_unlock_impl() noexcept
-  {
-#ifndef NDEBUG
-    type lk =
-#endif
-      this->fetch_sub(WAITER, std::memory_order_release);
-    assert(lk);
-    assert(lk < HOLDER);
-  }
 };
 
 /** Tiny, non-recursive mutex that keeps a count of waiters.

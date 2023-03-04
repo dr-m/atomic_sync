@@ -1,4 +1,4 @@
-#include "atomic_mutex.h"
+#include "atomic_shared_mutex.h"
 
 #if !defined _WIN32 && __cplusplus < 202002L
 /* Emulate the C++20 primitives */
@@ -177,17 +177,23 @@ void mutex_storage<T>::spin_wait_and_lock(unsigned spin_rounds) noexcept
   }
 }
 
-template<typename T> void mutex_storage<T>::lock_wait(T lk) noexcept
+template void mutex_storage<uint32_t>::wait_and_lock() noexcept;
+template void mutex_storage<uint32_t>::spin_wait_and_lock(unsigned) noexcept;
+
+template<typename T>
+void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
 {
+  assert(lk < X);
+  lk |= X;
+
   do
   {
-    assert(lk > HOLDER);
+    assert(lk > X);
     this->wait(lk);
     lk = this->load(std::memory_order_acquire);
   }
-  while (lk != HOLDER);
+  while (lk != X);
 }
 
-template void mutex_storage<uint32_t>::wait_and_lock() noexcept;
-template void mutex_storage<uint32_t>::spin_wait_and_lock(unsigned) noexcept;
-template void mutex_storage<uint32_t>::lock_wait(uint32_t) noexcept;
+template
+void shared_mutex_storage<uint32_t>::lock_inner_wait(uint32_t) noexcept;
