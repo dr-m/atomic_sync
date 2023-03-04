@@ -71,7 +71,7 @@ assembler code or a MSVC intrinsic function.
 #endif
 
 template<typename T>
-void mutex_storage<T>::wait_and_lock() noexcept
+void mutex_storage<T>::lock_wait() noexcept
 {
   T lk = WAITER + this->fetch_add(WAITER, std::memory_order_relaxed);
   for (;;)
@@ -116,7 +116,7 @@ void mutex_storage<T>::wait_and_lock() noexcept
 #endif
 
 template<typename T>
-void mutex_storage<T>::spin_wait_and_lock(unsigned spin_rounds) noexcept
+void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
 {
   T lk = WAITER + this->fetch_add(WAITER, std::memory_order_relaxed);
 
@@ -177,8 +177,8 @@ void mutex_storage<T>::spin_wait_and_lock(unsigned spin_rounds) noexcept
   }
 }
 
-template void mutex_storage<uint32_t>::wait_and_lock() noexcept;
-template void mutex_storage<uint32_t>::spin_wait_and_lock(unsigned) noexcept;
+template void mutex_storage<uint32_t>::lock_wait() noexcept;
+template void mutex_storage<uint32_t>::spin_lock_wait(unsigned) noexcept;
 
 template<typename T>
 void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept

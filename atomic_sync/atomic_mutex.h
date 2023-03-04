@@ -22,17 +22,14 @@ protected:
 #endif
 
 public:
-  constexpr bool is_locked_or_waiting() const noexcept
-  { return this->load(std::memory_order_acquire) != 0; }
   constexpr bool is_locked() const noexcept
   { return this->load(std::memory_order_acquire) & HOLDER; }
+  constexpr bool is_locked_or_waiting() const noexcept
+  { return this->load(std::memory_order_acquire) != 0; }
   constexpr bool is_locked_not_waiting() const noexcept
   { return this->load(std::memory_order_acquire) == HOLDER; }
 
 protected:
-  void wait_and_lock() noexcept;
-  void spin_wait_and_lock(unsigned spin_rounds) noexcept;
-
   /** Try to acquire a mutex
   @return whether the mutex was acquired */
   bool lock_impl() noexcept
@@ -42,6 +39,9 @@ protected:
                                          std::memory_order_acquire,
                                          std::memory_order_relaxed);
   }
+  void lock_wait() noexcept;
+  void spin_lock_wait(unsigned spin_rounds) noexcept;
+
   /** Release a mutex
   @return whether the lock is being waited for */
   bool unlock_impl() noexcept
@@ -98,14 +98,14 @@ public:
   {
     __tsan_mutex_pre_lock(this, 0);
     if (!this->lock_impl())
-      this->wait_and_lock();
+      this->lock_wait();
     __tsan_mutex_post_lock(this, 0, 0);
   }
   void spin_lock(unsigned spin_rounds) noexcept
   {
     __tsan_mutex_pre_lock(this, 0);
     if (!this->lock_impl())
-      this->spin_wait_and_lock(spin_rounds);
+      this->spin_lock_wait(spin_rounds);
     __tsan_mutex_post_lock(this, 0, 0);
   }
   void unlock() noexcept
