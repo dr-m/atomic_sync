@@ -61,15 +61,6 @@ protected:
     return this->fetch_or(X, std::memory_order_acquire);
   }
 
-  /** For atomic_shared_mutex::try_lock()
-  @return whether the exclusive lock was acquired */
-  bool try_lock_inner() noexcept
-  {
-    type lk = 0;
-    return compare_exchange_strong(lk, X, std::memory_order_acquire,
-                                   std::memory_order_relaxed);
-  }
-
   /** Wait for an exclusive lock to be granted (any S locks to be released)
   @param lk  recent number of conflicting S lock holders */
   void lock_inner_wait(type lk) noexcept;
@@ -247,15 +238,10 @@ public:
   {
     if (!this->ex.try_lock())
       return false;
-
-    __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
-    if (this->exclusive_try_lock_inner()) {
-      __tsan_mutex_post_lock(this, __tsan_mutex_try_lock, 0);
-      return true;
-    }
-    __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
-    this->unlock_outer();
-    return false;
+    __tsan_mutex_pre_lock(this, 0);
+    this->lock_inner();
+    __tsan_mutex_post_lock(this, 0, 0);
+    return true;
   }
 
   /** Acquire a shared lock (which can coexist with S or U locks). */
