@@ -7,9 +7,9 @@ struct shared_mutex_storage : mutex_storage<T>
   atomic_mutex<mutex_storage<T>> ex;
 
   constexpr bool is_locked() const noexcept
-  { return this->load(std::memory_order_acquire) == this->HOLDER; }
+  { return this->is_locked_not_waiting(); }
   constexpr bool is_locked_or_waiting() const noexcept
-  { return ex.load(std::memory_order_acquire) || this->is_locked(); }
+  { return ex.is_locked_or_waiting() || this->is_locked(); }
 };
 
 /** Slim Shared/Update/Exclusive lock without recursion (re-entrancy).
@@ -52,27 +52,12 @@ We count shared locks to have necessary and sufficient notify_one() calls. */
 template<typename storage = shared_mutex_storage<>>
 class atomic_shared_mutex : public storage
 {
-  using type = typename storage::type;
-  /** flag to indicate an exclusive request; X lock is held when load()==X */
-  static constexpr type X = storage::HOLDER;
-  static constexpr type WAITER = storage::WAITER;
-
 #ifndef NDEBUG
-  bool is_ex_locked() const noexcept
-  { return this->ex.load(std::memory_order_acquire) != 0; }
-  bool is_exclusively_locked() const noexcept
-  { return this->load(std::memory_order_acquire) == this->HOLDER; }
+  constexpr bool is_ex_locked() const noexcept
+  { return this->ex.is_locked_or_waiting(); }
+  constexpr bool is_exclusively_locked() const noexcept
+  { return this->is_locked_not_waiting(); }
 #endif
-
-  /** Wait for an exclusive lock to be granted (any S locks to be released)
-  @param lk  recent number of conflicting S lock holders */
-  void exclusive_lock_wait(type lk) noexcept
-  {
-    assert(is_ex_locked());
-    assert(lk);
-    assert(lk < X);
-    this->lock_wait(lk | X);
-  }
 
   /** Wait for a shared lock to be granted (any X lock to be released) */
   void shared_lock_wait() noexcept
@@ -80,52 +65,40 @@ class atomic_shared_mutex : public storage
     bool acquired;
     do {
       this->ex.lock();
-      acquired = try_lock_shared();
+      acquired = this->shared_lock_impl();
       this->ex.unlock();
     } while (!acquired);
+    __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
   }
   /** Wait for a shared lock to be granted (any X lock to be released),
   with initial spinloop. */
   void spin_shared_lock_wait(unsigned spin_rounds) noexcept
   {
     this->ex.spin_lock(spin_rounds);
-    bool acquired = try_lock_shared();
+    bool acquired = this->shared_lock_impl();
     this->ex.unlock();
     if (!acquired)
       shared_lock_wait();
+    else
+      __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
   }
 
   /** Increment the shared lock count while holding the mutex */
   void shared_acquire() noexcept
   {
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
-#ifndef NDEBUG
-    type lk =
-#endif
-      this->fetch_add(WAITER, std::memory_order_acquire);
+    this->update_lock_impl();
     __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
-    assert(lk < X - WAITER);
   }
 
   /** Acquire an exclusive lock while holding the mutex */
   void exclusive_acquire() noexcept
   {
-    type lk;
     __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
-#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
-    /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
-    as a loop around LOCK CMPXCHG. In this particular case, toggling the
-    most significant bit using fetch_add() is equivalent, and is
-    translated into a simple LOCK XADD. */
-    if (X == type(~(type(~type(0) >> 1))))
-      lk = this->fetch_add(X, std::memory_order_acquire);
-    else
-#endif
-      lk = this->fetch_or(X, std::memory_order_acquire);
-    if (lk) {
+    if (auto lk = this->exclusive_lock_impl()) {
       __tsan_mutex_post_lock(this, __tsan_mutex_try_lock_failed, 0);
       __tsan_mutex_pre_lock(this, 0);
-      exclusive_lock_wait(lk);
+      this->exclusive_lock_wait(lk);
       __tsan_mutex_post_lock(this, 0, 0);
     } else
       __tsan_mutex_post_lock(this, __tsan_mutex_try_lock, 0);
@@ -150,17 +123,12 @@ public:
   @return whether the S lock was acquired */
   bool try_lock_shared() noexcept
   {
-    type lk = 0;
     __tsan_mutex_pre_lock(this, __tsan_mutex_try_read_lock);
-    while (!this->compare_exchange_weak(lk, lk + WAITER,
-                                        std::memory_order_acquire,
-                                        std::memory_order_relaxed))
-      if (lk & X) {
-        __tsan_mutex_post_lock(this, __tsan_mutex_try_read_lock_failed, 0);
-        return false;
-      }
-    __tsan_mutex_post_lock(this, __tsan_mutex_try_read_lock, 0);
-    return true;
+    bool acquired = this->shared_lock_impl();
+    __tsan_mutex_post_lock(this, acquired
+                           ? __tsan_mutex_try_read_lock_failed
+                           : __tsan_mutex_try_read_lock, 0);
+    return acquired;
   }
 
   /** Try to acquire an Update lock (which conflicts with other U or X lock).
@@ -170,12 +138,8 @@ public:
     if (!this->ex.try_lock())
       return false;
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
-#ifndef NDEBUG
-    type lk =
-#endif
-    this->fetch_add(WAITER, std::memory_order_acquire);
+    this->update_lock_impl();
     __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
-    assert(lk < X - WAITER);
     return true;
   }
 
@@ -187,9 +151,7 @@ public:
       return false;
 
     __tsan_mutex_pre_lock(this, __tsan_mutex_try_lock);
-    type lk = 0;
-    if (compare_exchange_strong(lk, X, std::memory_order_acquire,
-                                std::memory_order_relaxed)) {
+    if (this->exclusive_try_lock_impl()) {
       __tsan_mutex_post_lock(this, __tsan_mutex_try_lock, 0);
       return true;
     }
@@ -199,9 +161,22 @@ public:
   }
 
   /** Acquire a shared lock (which can coexist with S or U locks). */
-  void lock_shared() noexcept { if (!try_lock_shared()) shared_lock_wait(); }
+  void lock_shared() noexcept
+  {
+    __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
+    if (!this->shared_lock_impl())
+      shared_lock_wait();
+    else
+      __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
+  }
   void spin_lock_shared(unsigned spin_rounds) noexcept
-  { if (!try_lock_shared()) spin_shared_lock_wait(spin_rounds); }
+  {
+    __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
+    if (!this->shared_lock_impl())
+      spin_shared_lock_wait(spin_rounds);
+    else
+      __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
+  }
 
   /** Acquire an update lock (which can coexist with S locks). */
   void lock_update() noexcept { this->ex.lock(); shared_acquire(); }
@@ -219,10 +194,10 @@ public:
     assert(is_ex_locked());
     __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
     __tsan_mutex_pre_lock(this, 0);
-    type lk = this->fetch_add(X - WAITER, std::memory_order_acquire);
+    auto lk = this->update_lock_upgrade_impl();
     __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
-    if (lk != WAITER)
-      exclusive_lock_wait(lk - WAITER);
+    if (lk)
+      this->exclusive_lock_wait(lk);
     __tsan_mutex_post_lock(this, 0, 0);
   }
   /** Downgrade an exclusive lock to update. */
@@ -232,7 +207,7 @@ public:
     assert(is_exclusively_locked());
     __tsan_mutex_pre_unlock(this, 0);
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
-    this->store(WAITER, std::memory_order_release);
+    this->update_lock_downgrade_impl();
     __tsan_mutex_post_unlock(this, 0);
     __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
     /* Note: Any pending lock_shared() will not be woken up until
@@ -243,13 +218,12 @@ public:
   void unlock_shared() noexcept
   {
     __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
-    type lk = this->fetch_sub(WAITER, std::memory_order_release);
+    bool notify = this->shared_unlock_impl();
     __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
-    assert(~X & lk);
-    if (lk == X + WAITER)
+    if (notify)
     {
       __tsan_mutex_pre_signal(this, 0);
-      this->notify_one();
+      this->unlock_notify();
       __tsan_mutex_post_signal(this, 0);
     }
   }
@@ -257,13 +231,8 @@ public:
   void unlock_update() noexcept
   {
     __tsan_mutex_pre_unlock(this, __tsan_mutex_read_lock);
-#ifndef NDEBUG
-    type lk =
-#endif
-      this->fetch_sub(WAITER, std::memory_order_release);
+    this->update_unlock_impl();
     __tsan_mutex_post_unlock(this, __tsan_mutex_read_lock);
-    assert(lk);
-    assert(lk < X);
     this->ex.unlock();
   }
   /** Release an exclusive lock. */
@@ -271,7 +240,7 @@ public:
   {
     assert(is_exclusively_locked());
     __tsan_mutex_pre_unlock(this, 0);
-    this->store(0, std::memory_order_release);
+    this->exclusive_unlock();
     __tsan_mutex_post_unlock(this, 0);
     this->ex.unlock();
   }
