@@ -4,7 +4,11 @@
 #include "tsan.h"
 
 template<typename T = uint32_t>
-class mutex_storage : protected std::atomic<T>
+class mutex_storage :
+#if !defined _WIN32 && __cplusplus < 202002L
+  protected /* Emulate C++20 for shared_mutex_storage */
+#endif
+std::atomic<T>
 {
   using type = T;
 
@@ -12,6 +16,7 @@ class mutex_storage : protected std::atomic<T>
   static constexpr type WAITER = 1;
 
 #if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
+protected:
   void notify_one() noexcept;
   inline void wait(T old) const noexcept;
 #endif
@@ -45,7 +50,7 @@ protected:
     assert(lk & HOLDER);
     return lk != HOLDER + WAITER;
   }
-  /** Notify waiters after one of unlock_impl() returned true */
+  /** Notify waiters after unlock_impl() returned true */
   void unlock_notify() noexcept { this->notify_one(); }
 };
 

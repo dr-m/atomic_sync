@@ -2,7 +2,12 @@
 #include "atomic_mutex.h"
 
 template<typename T = uint32_t>
-class shared_mutex_storage : public mutex_storage<T>
+class shared_mutex_storage :
+#if !defined _WIN32 && __cplusplus < 202002L
+  mutex_storage<T> // emulates std::atomic::wait(), std::atomic::notify_one()
+#else
+  std::atomic<T>
+#endif
 {
   atomic_mutex<mutex_storage<T>> ex;
   using type = T;
@@ -11,7 +16,7 @@ class shared_mutex_storage : public mutex_storage<T>
 
 public:
   constexpr bool is_locked() const noexcept
-  { return this->is_locked_not_waiting(); }
+  { return this->load(std::memory_order_acquire) == X; }
   constexpr bool is_locked_or_waiting() const noexcept
   { return ex.is_locked_or_waiting() || this->is_locked(); }
 protected:
@@ -71,7 +76,13 @@ protected:
 
   /** Release an exclusive lock of an atomic_shared_mutex */
   void unlock_inner() noexcept
-  { this->store(0, std::memory_order_release); }
+  {
+    assert(this->is_locked());
+    this->store(0, std::memory_order_release);
+  }
+
+  /** Notify waiters after shared_unlock_inner() returned true */
+  void shared_unlock_inner_notify() noexcept { this->notify_one(); }
 
   /** For atomic_shared_mutex::update_lock() */
   void update_lock_inner() noexcept
@@ -93,7 +104,7 @@ protected:
   void update_lock_downgrade_inner() noexcept
   {
     assert(ex.is_locked());
-    assert(this->is_locked_not_waiting());
+    assert(this->is_locked());
     this->store(WAITER, std::memory_order_release);
   }
   /** For atomic_shared_mutex::unlock_update() */
@@ -305,7 +316,7 @@ public:
     if (notify)
     {
       __tsan_mutex_pre_signal(this, 0);
-      this->unlock_notify();
+      this->shared_unlock_inner_notify();
       __tsan_mutex_post_signal(this, 0);
     }
   }
@@ -320,7 +331,6 @@ public:
   /** Release an exclusive lock. */
   void unlock() noexcept
   {
-    assert(this->is_locked_not_waiting());
     __tsan_mutex_pre_unlock(this, 0);
     this->unlock_inner();
     __tsan_mutex_post_unlock(this, 0);
