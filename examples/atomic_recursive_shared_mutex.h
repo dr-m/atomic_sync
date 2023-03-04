@@ -264,12 +264,12 @@ public:
   }
 
   /** Downgrade a single exclusive lock to an update lock */
-  void lock_update_downgrade() noexcept
+  void update_lock_downgrade() noexcept
   {
     assert(holding_lock());
     assert(recursive <= RECURSIVE_MAX);
     recursive *= RECURSIVE_U;
-    super::lock_update_downgrade();
+    super::update_lock_downgrade();
   }
 
   /** Acquire an exclusive lock or upgrade an update lock

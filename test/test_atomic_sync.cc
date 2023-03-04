@@ -103,7 +103,7 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
       critical = true;
       critical = false;
       if (!g.was_elided())
-        sux.lock_update_downgrade();
+        sux.update_lock_downgrade();
     }
   }
 #if !defined WITH_ELISION || defined NDEBUG
@@ -149,7 +149,7 @@ static void test_recursive_shared_mutex()
       recursive_sux.unlock();
       assert(critical);
       critical = false;
-      recursive_sux.lock_update_downgrade();
+      recursive_sux.update_lock_downgrade();
       recursive_sux.unlock_update();
     }
   }

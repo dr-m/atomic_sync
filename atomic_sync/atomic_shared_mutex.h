@@ -201,7 +201,7 @@ public:
     __tsan_mutex_post_lock(this, 0, 0);
   }
   /** Downgrade an exclusive lock to update. */
-  void lock_update_downgrade() noexcept
+  void update_lock_downgrade() noexcept
   {
     assert(is_ex_locked());
     assert(is_exclusively_locked());
