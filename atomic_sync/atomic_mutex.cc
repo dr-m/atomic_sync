@@ -111,14 +111,9 @@ void mutex_storage<T>::wait_and_lock() noexcept
   }
 }
 
-#ifndef SPINLOOP
-template<typename T>
-void mutex_storage<T>::spin_wait_and_lock(unsigned) noexcept
-{ wait_and_lock(); }
-#else
-# ifdef _WIN32
-#  include <windows.h>
-# endif
+#ifdef _WIN32
+# include <windows.h>
+#endif
 
 template<typename T>
 void mutex_storage<T>::spin_wait_and_lock(unsigned spin_rounds) noexcept
@@ -181,7 +176,6 @@ void mutex_storage<T>::spin_wait_and_lock(unsigned spin_rounds) noexcept
     }
   }
 }
-#endif
 
 template<typename T> void mutex_storage<T>::lock_wait(T lk) noexcept
 {
