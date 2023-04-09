@@ -42,10 +42,12 @@ cmake --build .
 test/test_atomic_sync
 test/test/atomic_condition
 test/test_mutex 4 10000
+test/test_native_mutex 4 10000
 # Microsoft Windows:
 test/Debug/test_atomic_sync
 test/Debug/test_atomic_condition
 test/Debug/test_mutex 4 10000
+test/Debug/test_native_mutex 4 10000
 ```
 The output of the `test_atomic_sync` program should be like this:
 ```
@@ -141,6 +143,14 @@ GCC 11.
 The instrumentation has been tested with clang++-14, clang++-15, and
 GCC 12. The program `test_mutex`, which does not use
 `atomic_shared_mutex`, has been tested with GCC 11 `-fsanitize=thread`.
+
+The program `test_native_mutex` demonstrates how a user-defined
+`mutex_storage` (based on POSIX `pthread_mutex_t` or Microsoft Windows
+`SRWLOCK`) can be used with `atomic_mutex`. That program will report
+bogus ThreadSanitizer data race warnings when built with GCC 12 for
+GNU/Linux, presumably because the built-in instrumentation for
+`pthread_mutex_t` interferes with the additional instrumentation in
+`atomic_mutex`.
 
 ### Lock elision
 
