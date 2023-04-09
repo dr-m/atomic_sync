@@ -4,30 +4,22 @@
 #include "tsan.h"
 
 template<typename T = uint32_t>
-class mutex_storage :
-#if !defined _WIN32 && __cplusplus < 202002L
-  protected /* Emulate C++20 for shared_mutex_storage */
-#endif
-std::atomic<T>
+class mutex_storage
 {
   using type = T;
+  // exposition only; see test_native_mutex for a possible alternative
+  std::atomic<type> m;
 
   static constexpr type HOLDER = type(~(type(~type(0)) >> 1));
   static constexpr type WAITER = 1;
 
-#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
-protected:
-  void notify_one() noexcept;
-  inline void wait(T old) const noexcept;
-#endif
-
 public:
   constexpr bool is_locked() const noexcept
-  { return this->load(std::memory_order_acquire) & HOLDER; }
+  { return m.load(std::memory_order_acquire) & HOLDER; }
   constexpr bool is_locked_or_waiting() const noexcept
-  { return this->load(std::memory_order_acquire) != 0; }
+  { return m.load(std::memory_order_acquire) != 0; }
   constexpr bool is_locked_not_waiting() const noexcept
-  { return this->load(std::memory_order_acquire) == HOLDER; }
+  { return m.load(std::memory_order_acquire) == HOLDER; }
 
 protected:
   /** Try to acquire a mutex
@@ -35,9 +27,9 @@ protected:
   bool lock_impl() noexcept
   {
     type lk = 0;
-    return this->compare_exchange_strong(lk, HOLDER + WAITER,
-                                         std::memory_order_acquire,
-                                         std::memory_order_relaxed);
+    return m.compare_exchange_strong(lk, HOLDER + WAITER,
+                                     std::memory_order_acquire,
+                                     std::memory_order_relaxed);
   }
   void lock_wait() noexcept;
   void spin_lock_wait(unsigned spin_rounds) noexcept;
@@ -46,12 +38,19 @@ protected:
   @return whether the lock is being waited for */
   bool unlock_impl() noexcept
   {
-    T lk= this->fetch_sub(HOLDER + WAITER, std::memory_order_release);
+    T lk= m.fetch_sub(HOLDER + WAITER, std::memory_order_release);
     assert(lk & HOLDER);
     return lk != HOLDER + WAITER;
   }
+#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
+  void notify_one() noexcept;
+  inline void wait(T old) const noexcept;
   /** Notify waiters after unlock_impl() returned true */
   void unlock_notify() noexcept { this->notify_one(); }
+#else
+  /** Notify waiters after unlock_impl() returned true */
+  void unlock_notify() noexcept { m.notify_one(); }
+#endif
 };
 
 /** Tiny, non-recursive mutex that keeps a count of waiters.

@@ -129,20 +129,20 @@ could also offer the benefit of catching lock-order-inversion
 
 The `atomic_shared_mutex` is instrumented as two locks, corresponding
 to its internal implementation. An exclusive `lock()` internally
-acquires a lock on both the data member `ex` and the base
-`mutex_storage`. A `lock_shared()` operates on the base
-`mutex_storage`. If the `mutex_storage` is write-locked, then
-`lock_shared()` will momentarily acquire and release `ex` in order to
-wait for `unlock()`. The third lock mode `lock_update()` locks `ex`
-and acquires a shared lock on the base `mutex_storage`.
+acquires a lock on both the data members `outer` and `inner`.
+A `lock_shared()` operates on the `inner` lock. If the `mutex_storage`
+is write-locked, then `lock_shared()` will momentarily acquire and
+release `outer` in order to wait for `unlock()`. The third lock mode
+`lock_update()` locks `outer` and acquires a shared lock on `inner`.
 
 For `atomic_shared_mutex`, the ThreadSanitizer instrumentation
 includes a flag `__tsan_mutex_try_read_lock` that is not available in
 GCC 11.
 
-The instrumentation has been tested with clang++-14, clang++-15, and
-GCC 12. The program `test_mutex`, which does not use
-`atomic_shared_mutex`, has been tested with GCC 11 `-fsanitize=thread`.
+The instrumentation depends on some features that are not available in
+C++11. It has been tested with clang++-14, clang++-15, and GCC 12. The
+program `test_mutex`, which does not use `atomic_shared_mutex`, has
+been tested with GCC 11 `-fsanitize=thread`.
 
 The program `test_native_mutex` demonstrates how a user-defined
 `mutex_storage` (based on POSIX `pthread_mutex_t` or Microsoft Windows

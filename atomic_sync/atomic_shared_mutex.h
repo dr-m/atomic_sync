@@ -2,35 +2,32 @@
 #include "atomic_mutex.h"
 
 template<typename T = uint32_t>
-class shared_mutex_storage :
-#if !defined _WIN32 && __cplusplus < 202002L
-  mutex_storage<T> // emulates std::atomic::wait(), std::atomic::notify_one()
-#else
-  std::atomic<T>
-#endif
+class shared_mutex_storage
 {
-  atomic_mutex<mutex_storage<T>> ex;
+  // exposition only
+  std::atomic<T> inner;
+  atomic_mutex<mutex_storage<T>> outer;
   using type = T;
   static constexpr type X = type(~(type(~type(0)) >> 1));
   static constexpr type WAITER = 1;
 
 public:
   constexpr bool is_locked() const noexcept
-  { return this->load(std::memory_order_acquire) == X; }
+  { return inner.load(std::memory_order_acquire) == X; }
   constexpr bool is_locked_or_waiting() const noexcept
-  { return ex.native_handle().is_locked_or_waiting() || this->is_locked(); }
+  { return outer.native_handle().is_locked_or_waiting() || is_locked(); }
 protected:
-  void lock_outer() noexcept { ex.lock(); }
+  void lock_outer() noexcept { outer.lock(); }
   void spin_lock_outer(unsigned spin_rounds) noexcept
-  { ex.spin_lock(spin_rounds); }
-  void unlock_outer() noexcept { ex.unlock(); }
+  { outer.spin_lock(spin_rounds); }
+  void unlock_outer() noexcept { outer.unlock(); }
 
   /** Try to acquire a shared mutex
   @return whether the shared mutex was acquired */
   bool shared_lock_inner() noexcept
   {
     type lk = 0;
-    while (!this->compare_exchange_weak(lk, lk + WAITER,
+    while (!inner.compare_exchange_weak(lk, lk + WAITER,
                                         std::memory_order_acquire,
                                         std::memory_order_relaxed))
       if (lk & X)
@@ -41,7 +38,7 @@ protected:
   @return whether an exclusive mutex is being waited for */
   bool shared_unlock_inner() noexcept
   {
-    type lk = this->fetch_sub(WAITER, std::memory_order_release);
+    type lk = inner.fetch_sub(WAITER, std::memory_order_release);
     assert(~X & lk);
     return lk == X + WAITER;
   }
@@ -56,9 +53,9 @@ protected:
     as a loop around LOCK CMPXCHG. In this particular case, toggling the
     most significant bit using fetch_add() is equivalent, and is
     translated into a simple LOCK XADD. */
-    return this->fetch_add(X, std::memory_order_acquire);
+    return inner.fetch_add(X, std::memory_order_acquire);
 #endif
-    return this->fetch_or(X, std::memory_order_acquire);
+    return inner.fetch_or(X, std::memory_order_acquire);
   }
 
   /** Wait for an exclusive lock to be granted (any S locks to be released)
@@ -69,43 +66,47 @@ protected:
   void unlock_inner() noexcept
   {
     assert(this->is_locked());
-    this->store(0, std::memory_order_release);
+    inner.store(0, std::memory_order_release);
   }
 
+#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
+  void shared_unlock_inner_notify() noexcept;
+#else
   /** Notify waiters after shared_unlock_inner() returned true */
-  void shared_unlock_inner_notify() noexcept { this->notify_one(); }
+  void shared_unlock_inner_notify() noexcept { inner.notify_one(); }
+#endif
 
   /** For atomic_shared_mutex::update_lock() */
   void update_lock_inner() noexcept
   {
-    assert(ex.native_handle().is_locked());
+    assert(outer.native_handle().is_locked());
 #ifndef NDEBUG
     type lk =
 #endif
-      this->fetch_add(WAITER, std::memory_order_acquire);
+      inner.fetch_add(WAITER, std::memory_order_acquire);
     assert(lk < X - WAITER);
   }
   /** For atomic_shared_mutex::update_lock_upgrade() */
   type update_lock_upgrade_inner() noexcept
   {
-    assert(ex.native_handle().is_locked());
-    return this->fetch_add(X - WAITER, std::memory_order_acquire) - WAITER;
+    assert(outer.native_handle().is_locked());
+    return inner.fetch_add(X - WAITER, std::memory_order_acquire) - WAITER;
   }
   /** For atomic_shared_mutex::update_lock_downgrade() */
   void update_lock_downgrade_inner() noexcept
   {
-    assert(ex.native_handle().is_locked());
+    assert(outer.native_handle().is_locked());
     assert(this->is_locked());
-    this->store(WAITER, std::memory_order_release);
+    inner.store(WAITER, std::memory_order_release);
   }
   /** For atomic_shared_mutex::unlock_update() */
   void update_unlock_inner() noexcept
   {
-    assert(ex.native_handle().is_locked());
+    assert(outer.native_handle().is_locked());
 #ifndef NDEBUG
     type lk =
 #endif
-      this->fetch_sub(WAITER, std::memory_order_release);
+      inner.fetch_sub(WAITER, std::memory_order_release);
     assert(lk);
     assert(lk < X);
   }
@@ -226,7 +227,7 @@ public:
   @return whether the U lock was acquired */
   bool try_lock_update() noexcept
   {
-    if (!this->ex.try_lock())
+    if (!this->outer.try_lock())
       return false;
     __tsan_mutex_pre_lock(this, __tsan_mutex_read_lock);
     this->update_lock_inner();
@@ -238,7 +239,7 @@ public:
   @return whether the X lock was acquired */
   bool try_lock() noexcept
   {
-    if (!this->ex.try_lock())
+    if (!this->outer.try_lock())
       return false;
     __tsan_mutex_pre_lock(this, 0);
     this->lock_inner();
