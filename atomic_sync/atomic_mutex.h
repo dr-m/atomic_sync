@@ -22,6 +22,9 @@ public:
   { return m.load(std::memory_order_acquire) == HOLDER; }
 
 protected:
+  /** @return default argument for spin_lock_wait() */
+  static unsigned default_spin_rounds();
+
   /** Try to acquire a mutex
   @return whether the mutex was acquired */
   bool lock_impl() noexcept
@@ -107,6 +110,8 @@ public:
       this->spin_lock_wait(spin_rounds);
     __tsan_mutex_post_lock(this, 0, 0);
   }
+  void spin_lock() noexcept
+  { return spin_lock(storage::default_spin_rounds()); }
   void unlock() noexcept
   {
     __tsan_mutex_pre_unlock(this, 0);

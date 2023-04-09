@@ -65,6 +65,10 @@ should be like this:
 ```
 atomic_mutex, atomic_shared_mutex, atomic_recursive_shared_mutex.
 ```
+There is a static member function declaration `default_spin_rounds()`
+in the `mutex_storage` and `shared_mutex_storage` classes, but it has
+not been defined. The idea is that it would provide a default argument
+for `spin_lock()` and friends.
 
 This is based on my implementation of InnoDB rw-locks in
 [MariaDB Server](https://github.com/MariaDB/server/) 10.6.

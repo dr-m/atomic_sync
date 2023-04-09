@@ -17,6 +17,9 @@ public:
   constexpr bool is_locked_or_waiting() const noexcept
   { return outer.native_handle().is_locked_or_waiting() || is_locked(); }
 protected:
+  /** @return default argument for spin_lock_outer() */
+  static unsigned default_spin_rounds();
+
   void lock_outer() noexcept { outer.lock(); }
   void spin_lock_outer(unsigned spin_rounds) noexcept
   { outer.spin_lock(spin_rounds); }
@@ -262,16 +265,22 @@ public:
       spin_shared_lock_wait(spin_rounds);
     __tsan_mutex_post_lock(this, __tsan_mutex_read_lock, 0);
   }
+  void spin_lock_shared() noexcept
+  { return spin_lock_shared(storage::default_spin_rounds()); }
 
   /** Acquire an update lock (which can coexist with S locks). */
   void lock_update() noexcept { this->lock_outer(); shared_acquire(); }
   void spin_lock_update(unsigned spin_rounds) noexcept
   { this->spin_lock_outer(spin_rounds); shared_acquire(); }
+  void spin_lock_update() noexcept
+  { return spin_lock_update(storage::default_spin_rounds()); }
 
   /** Acquire an exclusive lock. */
   void lock() noexcept { this->lock_outer(); this->lock_inner(); }
   void spin_lock(unsigned spin_rounds) noexcept
   { this->spin_lock_outer(spin_rounds); this->lock_inner(); }
+  void spin_lock() noexcept
+  { return spin_lock(storage::default_spin_rounds()); }
 
   /** Upgrade an update lock to exclusive. */
   void update_lock_upgrade() noexcept
