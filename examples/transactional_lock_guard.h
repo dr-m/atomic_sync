@@ -93,7 +93,7 @@ public:
 
 #ifdef WITH_ELISION
   bool was_elided() const noexcept
-  { return !m.native_handle().is_locked_or_waiting(); }
+  { return !m.get_storage().is_locked_or_waiting(); }
 #else
   bool was_elided() const noexcept { return false; }
 #endif
@@ -115,7 +115,7 @@ public:
 #ifdef WITH_ELISION
     if (xbegin())
     {
-      if (!m.native_handle().is_locked())
+      if (!m.get_storage().is_locked())
       {
         elided = true;
         return;
@@ -169,7 +169,7 @@ public:
 
 #ifdef WITH_ELISION
   bool was_elided() const noexcept
-  { return !m.native_handle().is_locked_or_waiting(); }
+  { return !m.get_storage().is_locked_or_waiting(); }
 #else
   bool was_elided() const noexcept { return false; }
 #endif

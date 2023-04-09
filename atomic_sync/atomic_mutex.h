@@ -59,7 +59,7 @@ protected:
 /** Tiny, non-recursive mutex that keeps a count of waiters.
 
 The interface intentionally resembles std::mutex.
-We do not define native_handle().
+The counterpart of get_storage() is std::mutex::native_handle().
 
 We define spin_lock(), which is like lock(), but with an initial spinloop.
 
@@ -83,7 +83,7 @@ public:
   /** No assignment operator */
   atomic_mutex& operator=(const atomic_mutex&) = delete;
 
-  constexpr const storage& native_handle() const { return *this; }
+  constexpr const storage& get_storage() const { return *this; }
 
   /** @return whether the mutex was acquired */
   bool try_lock() noexcept
