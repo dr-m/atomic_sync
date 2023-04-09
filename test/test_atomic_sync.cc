@@ -49,7 +49,7 @@ public:
 # define atomic_spin_shared_mutex atomic_shared_mutex
 # define atomic_spin_recursive_shared_mutex atomic_recursive_shared_mutex
 #endif
-static atomic_spin_mutex m;
+static atomic_spin_mutex<> m;
 
 #if !defined WITH_ELISION || defined NDEBUG
 # define transactional_assert(x) assert(x)
@@ -74,7 +74,7 @@ abort:
 #endif
 }
 
-static atomic_spin_shared_mutex sux;
+static atomic_spin_shared_mutex<> sux;
 
 TRANSACTIONAL_TARGET static void test_shared_mutex()
 {
@@ -114,7 +114,7 @@ abort:
 #endif
 }
 
-static atomic_spin_recursive_shared_mutex recursive_sux;
+static atomic_spin_recursive_shared_mutex<> recursive_sux;
 
 static void test_recursive_shared_mutex()
 {

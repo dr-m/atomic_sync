@@ -4,6 +4,7 @@
 #include <cassert>
 #include <vector>
 #include <chrono>
+#include <mutex>
 
 #include "atomic_mutex.h"
 
