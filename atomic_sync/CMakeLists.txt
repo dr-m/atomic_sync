@@ -1,6 +1,2 @@
-ADD_LIBRARY (atomic_mutex atomic_mutex.cc)
+ADD_LIBRARY (atomic_mutex atomic_shared_mutex.cc)
 TARGET_INCLUDE_DIRECTORIES (atomic_mutex PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-
-IF (CMAKE_CXX_STANDARD GREATER_EQUAL 20)
-  TARGET_COMPILE_FEATURES (atomic_mutex PUBLIC cxx_std_11)
-ENDIF()

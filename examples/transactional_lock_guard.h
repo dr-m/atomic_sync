@@ -93,7 +93,7 @@ public:
 
 #ifdef WITH_ELISION
   bool was_elided() const noexcept
-  { return !m.get_storage().is_locked_or_waiting(); }
+  { return !m.is_locked_or_waiting(); }
 #else
   bool was_elided() const noexcept { return false; }
 #endif

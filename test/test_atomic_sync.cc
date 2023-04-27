@@ -13,43 +13,7 @@ constexpr unsigned N_THREADS = 30;
 constexpr unsigned N_ROUNDS = 100;
 constexpr unsigned M_ROUNDS = 100;
 
-#if defined WITH_SPINLOOP && defined SPINLOOP
-# define ATOMIC_MUTEX_NAME(m) "atomic_spin_" #m
-/** Like atomic_mutex, but with a spinloop in lock() */
-template<typename storage = mutex_storage<>>
-class atomic_spin_mutex : public atomic_mutex<storage>
-{
-public:
-  void lock() noexcept { atomic_mutex<storage>::spin_lock(SPINLOOP); }
-};
-/** Like atomic_shared_mutex, but with spinloops */
-template<typename storage = shared_mutex_storage<>>
-class atomic_spin_shared_mutex : public atomic_shared_mutex<storage>
-{
-public:
-  void lock() noexcept { this->spin_lock(SPINLOOP); }
-  void shared_lock() noexcept { this->spin_lock_shared(SPINLOOP); }
-  void update_lock() noexcept { this->spin_lock_update(SPINLOOP); }
-};
-template<typename storage = shared_mutex_storage<>>
-class atomic_spin_recursive_shared_mutex :
-  public atomic_recursive_shared_mutex<storage>
-{
-public:
-  void lock_shared() noexcept { this->spin_lock_shared(SPINLOOP); }
-  void lock_update() noexcept { this->spin_lock_update(SPINLOOP); }
-  void lock_update_disowned() noexcept
-  { this->spin_lock_update_disowned(SPINLOOP); }
-  void lock() noexcept { this->spin_lock(SPINLOOP); }
-  void lock_disowned() noexcept { this->spin_lock_disowned(SPINLOOP); }
-};
-#else
-# define ATOMIC_MUTEX_NAME(m) "atomic_" #m
-# define atomic_spin_mutex atomic_mutex
-# define atomic_spin_shared_mutex atomic_shared_mutex
-# define atomic_spin_recursive_shared_mutex atomic_recursive_shared_mutex
-#endif
-static atomic_spin_mutex<> m;
+static atomic_mutex m;
 
 #if !defined WITH_ELISION || defined NDEBUG
 # define transactional_assert(x) assert(x)
@@ -74,7 +38,7 @@ abort:
 #endif
 }
 
-static atomic_spin_shared_mutex<> sux;
+static atomic_shared_mutex sux;
 
 TRANSACTIONAL_TARGET static void test_shared_mutex()
 {
@@ -114,7 +78,7 @@ abort:
 #endif
 }
 
-static atomic_spin_recursive_shared_mutex<> recursive_sux;
+static atomic_recursive_shared_mutex recursive_sux;
 
 static void test_recursive_shared_mutex()
 {
@@ -162,21 +126,21 @@ int main(int, char **)
 
 #ifdef WITH_ELISION
   fputs(have_transactional_memory
-        ? "transactional " ATOMIC_MUTEX_NAME(mutex)
-        : "non-transactional " ATOMIC_MUTEX_NAME(mutex),
+        ? "transactional atomic_mutex"
+        : "non-transactional atomic_mutex",
         stderr);
 #else
-  fputs(ATOMIC_MUTEX_NAME(mutex), stderr);
+  fputs("atomic_mutex", stderr);
 #endif
 
-  assert(!m.get_storage().is_locked_or_waiting());
+  assert(!m.is_locked_or_waiting());
   for (auto i = N_THREADS; i--; )
     t[i]= std::thread(test_atomic_mutex);
   for (auto i = N_THREADS; i--; )
     t[i].join();
-  assert(!m.get_storage().is_locked_or_waiting());
+  assert(!m.is_locked_or_waiting());
 
-  fputs(", " ATOMIC_MUTEX_NAME(shared_mutex), stderr);
+  fputs(", atomic_shared_mutex", stderr);
 
   assert(!sux.get_storage().is_locked_or_waiting());
   for (auto i = N_THREADS; i--; )
@@ -185,7 +149,7 @@ int main(int, char **)
     t[i].join();
   assert(!sux.get_storage().is_locked_or_waiting());
 
-  fputs(", " ATOMIC_MUTEX_NAME(recursive_shared_mutex), stderr);
+  fputs(", atomic_recursive_shared_mutex", stderr);
 
   recursive_sux.init();
   for (auto i = N_THREADS; i--; )
