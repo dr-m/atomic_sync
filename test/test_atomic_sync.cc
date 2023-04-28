@@ -142,12 +142,12 @@ int main(int, char **)
 
   fputs(", atomic_shared_mutex", stderr);
 
-  assert(!sux.get_storage().is_locked_or_waiting());
+  assert(!sux.is_locked_or_waiting());
   for (auto i = N_THREADS; i--; )
     t[i]= std::thread(test_shared_mutex);
   for (auto i = N_THREADS; i--; )
     t[i].join();
-  assert(!sux.get_storage().is_locked_or_waiting());
+  assert(!sux.is_locked_or_waiting());
 
   fputs(", atomic_recursive_shared_mutex", stderr);
 

@@ -4,7 +4,7 @@ PROJECT (atomic_sync
   LANGUAGES CXX
   DESCRIPTION "memory transaction friendly std::atomic based locks")
 
-SET (CMAKE_CXX_STANDARD 23)
+SET (CMAKE_CXX_STANDARD 20)
 
 ADD_SUBDIRECTORY (atomic_sync)
 ADD_SUBDIRECTORY (examples)

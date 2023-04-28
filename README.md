@@ -18,10 +18,6 @@ which is compatible with `lock_shared()`. This mode can be used for
 exclusively locking part of a resource while other parts can be safely
 accessed by shared lock holders.
 
-For maximal flexibility, a template parameter can be specified. We
-provide an interface `mutex_storage` and a reference implementation
-based on C++11 or C++20 `std::atomic` (default: 4 bytes).
-
 Some examples of extending or using the primitives are provided:
 * `atomic_condition_variable`: A condition variable in 4 bytes that
 goes with (`atomic_mutex` or `atomic_shared_mutex`).

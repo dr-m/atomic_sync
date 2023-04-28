@@ -40,10 +40,9 @@ lock_recursive() or lock_update_recursive() will allow
 the recursion or re-entrancy count to be incremented quickly.
 
 This is based on the ssux_lock in MariaDB Server 10.6. */
-template<typename storage = shared_mutex_storage<>>
-class atomic_recursive_shared_mutex : atomic_shared_mutex<storage>
+class atomic_recursive_shared_mutex : atomic_shared_mutex
 {
-  using super = atomic_shared_mutex<storage>;
+  using super = atomic_shared_mutex;
 
   /** Numbers of update and exclusive locks.
   Protected by atomic_shared_mutex. */
@@ -97,14 +96,14 @@ class atomic_recursive_shared_mutex : atomic_shared_mutex<storage>
 public:
   void init() noexcept
   {
-    assert(!this->get_storage().is_locked_or_waiting());
+    assert(!this->is_locked_or_waiting());
     assert(!recursive);
     assert(writer == std::thread::id{});
   }
 
   void destroy() noexcept
   {
-    assert(!this->get_storage().is_locked_or_waiting());
+    assert(!this->is_locked_or_waiting());
     assert(!recursive);
   }
 
@@ -139,8 +138,6 @@ public:
 
   bool try_lock_shared() noexcept { return super::try_lock_shared(); }
   void lock_shared() noexcept { super::lock_shared(); }
-  void spin_lock_shared(unsigned spin_rounds) noexcept
-  { super::spin_lock_shared(spin_rounds); }
   void unlock_shared() noexcept { super::unlock_shared(); }
 
   /** Acquire an update lock */
@@ -159,38 +156,12 @@ public:
     }
   }
 
-  void spin_lock_update(unsigned spin_rounds) noexcept
-  {
-    const std::thread::id id = std::this_thread::get_id();
-    if (writer.load(std::memory_order_relaxed) == id)
-      writer_recurse<true>();
-    else
-    {
-      super::spin_lock_update(spin_rounds);
-      assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
-      assert(!recursive);
-      recursive = RECURSIVE_U;
-      set_holder(id);
-    }
-  }
-
   /** Acquire an update lock, for set_holder() to be called later. */
   void lock_update_disowned() noexcept
   {
     assert(!(writer.load(std::memory_order_relaxed) ==
              std::this_thread::get_id()));
     super::lock_update();
-    assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
-    assert(!recursive);
-    recursive = RECURSIVE_U;
-  }
-
-  /** Acquire an update lock, for set_holder() to be called later. */
-  void spin_lock_update_disowned(unsigned spin_rounds) noexcept
-  {
-    assert(!(writer.load(std::memory_order_relaxed) ==
-             std::this_thread::get_id()));
-    super::spin_lock_update(spin_rounds);
     assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
     assert(!recursive);
     recursive = RECURSIVE_U;
@@ -212,39 +183,12 @@ public:
     }
   }
 
-  /** Acquire an exclusive lock */
-  void spin_lock(unsigned spin_rounds) noexcept
-  {
-    const std::thread::id id = std::this_thread::get_id();
-    if (writer.load(std::memory_order_relaxed) == id)
-      writer_recurse<false>();
-    else
-    {
-      super::spin_lock(spin_rounds);
-      assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
-      assert(!recursive);
-      recursive = RECURSIVE_X;
-      set_holder(id);
-    }
-  }
-
   /** Acquire an exclusive lock, for set_holder() to be called later. */
   void lock_disowned() noexcept
   {
     assert(!(writer.load(std::memory_order_relaxed) ==
              std::this_thread::get_id()));
     super::lock();
-    assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
-    assert(!recursive);
-    recursive = RECURSIVE_X;
-  }
-
-  /** Acquire an exclusive lock, for set_holder() to be called later. */
-  void spin_lock_disowned(unsigned spin_rounds) noexcept
-  {
-    assert(!(writer.load(std::memory_order_relaxed) ==
-             std::this_thread::get_id()));
-    super::spin_lock(spin_rounds);
     assert(writer.load(std::memory_order_relaxed) == std::thread::id{});
     assert(!recursive);
     recursive = RECURSIVE_X;
