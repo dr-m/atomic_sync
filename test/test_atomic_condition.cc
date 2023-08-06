@@ -6,7 +6,7 @@
 #include "atomic_condition_variable.h"
 #include "transactional_lock_guard.h"
 
-static bool critical;
+static unsigned pending;
 
 constexpr unsigned N_THREADS = 30;
 constexpr unsigned N_ROUNDS = 100;
@@ -18,14 +18,18 @@ static atomic_condition_variable cv;
 TRANSACTIONAL_TARGET static void test_condition_variable()
 {
   transactional_lock_guard<typeof m> g{m};
-  if (critical)
+  if (pending)
+  {
+    pending--;
     return;
+  }
 #ifdef WITH_ELISION
-  if (!critical && g.was_elided())
+  if (!pending && g.was_elided())
     xabort();
 #endif
-  while (!critical)
+  while (!pending)
     cv.wait(m);
+  pending--;
 }
 
 #include <condition_variable>
@@ -34,24 +38,28 @@ static std::condition_variable_any cva;
 TRANSACTIONAL_TARGET static void test_condition_variable_any()
 {
   transactional_lock_guard<typeof m> g{m};
-  if (critical)
+  if (pending)
+  {
+    pending--;
     return;
+  }
 #ifdef WITH_ELISION
-  if (!critical && g.was_elided())
+  if (!pending && g.was_elided())
     xabort();
 #endif
-  while (!critical)
+  while (!pending)
     cva.wait(m);
+  pending--;
 }
 
 TRANSACTIONAL_TARGET static void test_shared_condition_variable()
 {
   transactional_shared_lock_guard<typeof sux> g{sux};
 #ifdef WITH_ELISION
-  if (!critical && g.was_elided())
+  if (!pending && g.was_elided())
     xabort();
 #endif
-  while (!critical)
+  while (!pending)
     cv.wait_shared(sux);
 }
 
@@ -73,18 +81,17 @@ int main(int, char **)
   {
     for (auto i = N_THREADS; i--; )
       t[i] = std::thread(test_condition_variable);
-    bool is_waiting;
+    for (auto i = N_THREADS; i--; )
     {
       transactional_lock_guard<typeof m> g{m};
-      critical = true;
-      is_waiting = cv.is_waiting();
+      pending++;
+      if (cv.is_waiting())
+        cv.signal();
     }
-    if (is_waiting)
-      cv.broadcast();
     for (auto i = N_THREADS; i--; )
       t[i].join();
     assert(!cv.is_waiting());
-    critical = false;
+    assert(!pending);
   }
 
   fputs("atomic_mutex ", stderr);
@@ -93,14 +100,15 @@ int main(int, char **)
   {
     for (auto i = N_THREADS; i--; )
       t[i] = std::thread(test_condition_variable_any);
+    for (auto i = N_THREADS; i--; )
     {
-      std::lock_guard<typeof m> g{m};
-      critical = true;
-      cva.notify_all();
+      transactional_lock_guard<typeof m> g{m};
+      pending++;
+      cva.notify_one();
     }
     for (auto i = N_THREADS; i--; )
       t[i].join();
-    critical = false;
+    assert(!pending);
   }
 
   fputs("(any), ", stderr);
@@ -112,7 +120,7 @@ int main(int, char **)
     bool is_waiting;
     {
       transactional_lock_guard<typeof sux> g{sux};
-      critical = true;
+      pending = 1;
       is_waiting = cv.is_waiting();
     }
     if (is_waiting)
@@ -120,7 +128,7 @@ int main(int, char **)
     for (auto i = N_THREADS; i--; )
       t[i].join();
     assert(!cv.is_waiting());
-    critical = false;
+    pending = 0;
   }
 
   fputs("atomic_shared_mutex.\n", stderr);

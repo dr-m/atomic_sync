@@ -62,6 +62,7 @@ class atomic_condition_variable : private std::atomic<uint32_t>
   void notify_all() noexcept { FUTEX(WAKE, INT_MAX); }
   void wait(uint32_t old) const noexcept { FUTEX(WAIT, old); }
 #endif
+  static constexpr uint32_t EVENT = 1U << 16;
 public:
   /** Default constructor */
   constexpr atomic_condition_variable() : std::atomic<uint32_t>(0) {}
@@ -76,6 +77,7 @@ public:
     const uint32_t val = fetch_add(1, std::memory_order_acquire);
     m.unlock();
     wait(1 + val);
+    fetch_sub(1, std::memory_order_relaxed);
     m.lock();
   }
 
@@ -84,6 +86,7 @@ public:
     const uint32_t val = fetch_add(1, std::memory_order_acquire);
     m.unlock_shared();
     wait(1 + val);
+    fetch_sub(1, std::memory_order_relaxed);
     m.lock_shared();
   }
 
@@ -92,14 +95,22 @@ public:
     const uint32_t val = fetch_add(1, std::memory_order_acquire);
     m.unlock_update();
     wait(1 + val);
+    fetch_sub(1, std::memory_order_relaxed);
     m.lock_update();
   }
 
-  bool is_waiting() const noexcept { return load(std::memory_order_acquire); }
+  bool is_waiting() const noexcept
+  { return load(std::memory_order_acquire) & (EVENT - 1); }
 
   void signal() noexcept
-  { if (exchange(0, std::memory_order_release)) notify_one(); }
+  {
+    if (fetch_add(EVENT, std::memory_order_release) & (EVENT - 1))
+      notify_one();
+  }
 
   void broadcast() noexcept
-  { if (exchange(0, std::memory_order_release)) notify_all(); }
+  {
+    if (fetch_add(EVENT, std::memory_order_release) & (EVENT - 1))
+      notify_all();
+  }
 };
