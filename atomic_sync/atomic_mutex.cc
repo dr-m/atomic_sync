@@ -1,13 +1,13 @@
 #include "atomic_shared_mutex.h"
 
-#if !defined _WIN32 && __cplusplus < 202002L
+#if defined __linux__ || (!defined _WIN32 && __cplusplus < 202002L)
 /* Emulate the C++20 primitives */
 # include <climits>
 # if defined __linux__
 #  include <linux/futex.h>
 #  include <unistd.h>
 #  include <sys/syscall.h>
-#  define FUTEX(op,m,n)                                                 \
+#  define FUTEX(op,m,n)                                                \
    syscall(SYS_futex, m, FUTEX_ ## op ## _PRIVATE, n, nullptr, nullptr, 0)
 # elif defined __OpenBSD__
 #  include <sys/time.h>
@@ -28,11 +28,67 @@
 # else
 #  error "no C++20 nor futex support"
 # endif
+
+# ifdef __linux__
+#  ifndef __NR_futex_wake
+#   define __NR_futex_wake 452
+#   define __NR_futex_wait 453
+#   define FUTEX2_SIZE_U8 0
+#   define FUTEX2_SIZE_U32 2
+#   define FUTEX2_NUMA 4
+#   define FUTEX2_PRIVATE FUTEX_PRIVATE_FLAG
+#  endif
+#  define FUTEX2_WAKE(m,n)                                      \
+  syscall(__NR_futex_wake, m, unsigned(~0U), n,                 \
+          FUTEX2_SIZE_U32 | FUTEX2_NUMA | FUTEX2_PRIVATE)
+#  define FUTEX2_WAIT(m,n)                                      \
+  syscall(__NR_futex_wait, m, unsigned(~0U), n,                 \
+          FUTEX2_SIZE_U32 | FUTEX2_NUMA | FUTEX2_PRIVATE,   \
+          0, 0/*CLOCK_REALTIME*/)
+
+static void futex1_wake(const uint32_t *m) { FUTEX(WAKE, &m, 1); }
+static void futex1_wait(const uint32_t *m, uint32_t old)
+{ FUTEX(WAIT, &m, old); }
+
+static void futex2_wake(const uint32_t *m)
+{ FUTEX2_WAKE(m, 1); }
+static void futex2_wait(const uint32_t *m, uint32_t old)
+{ FUTEX2_WAIT(m, old); }
+
+#include <errno.h>
+extern "C"
+{
+static void (*resolve_futex_wake(void))(const uint32_t*)
+{
+  syscall(__NR_futex_wake, nullptr, 0xffff, 1, FUTEX2_SIZE_U8);
+  return errno == ENOSYS ? futex1_wake : futex2_wake;
+}
+
+static void (*resolve_futex_wait(void))(const uint32_t*, uint32_t)
+{
+  syscall(__NR_futex_wake, nullptr, 0xffff, 1, FUTEX2_SIZE_U8);
+  return errno == ENOSYS ? futex1_wait : futex2_wait;
+}
+}
+
+static void futex_wake(const uint32_t *m)
+__attribute__ ((ifunc ("resolve_futex_wake")));
+static void futex_wait(const uint32_t *m, uint32_t old)
+__attribute__ ((ifunc ("resolve_futex_wait")));
+
+template<>
+void mutex_storage<uint32_t>::notify_one() noexcept
+{futex_wake(reinterpret_cast<uint32_t*>(&m));}
+template<>
+inline void mutex_storage<uint32_t>::wait(uint32_t old) const noexcept
+{futex_wait(reinterpret_cast<const uint32_t*>(&m), old);}
+# else
 template<>
 void mutex_storage<uint32_t>::notify_one() noexcept {FUTEX(WAKE, &m, 1);}
 template<>
 inline void mutex_storage<uint32_t>::wait(uint32_t old) const noexcept
 {FUTEX(WAIT, &m, old);}
+# endif
 #endif
 
 /*
@@ -78,11 +134,7 @@ void mutex_storage<T>::lock_wait() noexcept
   {
     if (lk & HOLDER)
     {
-#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
-      this->wait(lk);
-#else
-      m.wait(lk);
-#endif
+      wait(lk);
 #if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     reload:
 #endif
@@ -157,11 +209,7 @@ void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
     assert(~HOLDER & lk);
     if (lk & HOLDER)
     {
-#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
-      this->wait(lk);
-#else
-      m.wait(lk);
-#endif
+      wait(lk);
 #ifdef IF_FETCH_OR_GOTO
     reload:
 #endif
@@ -197,7 +245,9 @@ void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
   do
   {
     assert(lk > X);
-#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
+#ifdef __linux__
+    futex_wait(reinterpret_cast<const uint32_t*>(&inner), lk);
+#elif !defined _WIN32 && __cplusplus < 202002L
     FUTEX(WAIT, &inner, lk);
 #else
     inner.wait(lk);
@@ -210,10 +260,16 @@ void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
 template
 void shared_mutex_storage<uint32_t>::lock_inner_wait(uint32_t) noexcept;
 
-#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
+#if defined __linux__ || (!defined _WIN32 && __cplusplus < 202002L)
 template<typename T>
 void shared_mutex_storage<T>::shared_unlock_inner_notify() noexcept
-{FUTEX(WAKE, &inner, 1);}
+{
+#ifdef __linux__
+  futex_wake(reinterpret_cast<const uint32_t*>(&inner));
+#else
+  FUTEX(WAKE, &inner, 1);
+#endif
+}
 template
 void shared_mutex_storage<uint32_t>::shared_unlock_inner_notify() noexcept;
 #endif

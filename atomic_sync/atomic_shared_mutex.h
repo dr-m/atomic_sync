@@ -8,6 +8,10 @@ class shared_mutex_storage
 {
   // exposition only
   std::atomic<T> inner;
+# if defined __linux__
+  // for FUTEX2_NUMA
+  int node_id = -1;
+#endif
   atomic_mutex<mutex_storage<T>> outer;
   using type = T;
   static constexpr type X = type(~(type(~type(0)) >> 1));
@@ -75,7 +79,7 @@ private:
     inner.store(0, std::memory_order_release);
   }
 
-#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
+#if defined __linux__ || (!defined _WIN32 && __cplusplus < 202002L)
   void shared_unlock_inner_notify() noexcept;
 #else
   /** Notify waiters after shared_unlock_inner() returned true */

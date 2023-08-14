@@ -11,7 +11,10 @@ class mutex_storage
   using type = T;
   // exposition only; see test_native_mutex for a possible alternative
   std::atomic<type> m;
-
+# if defined __linux__
+  // for FUTEX2_NUMA
+  int node_id = -1;
+#endif
   static constexpr type HOLDER = type(~(type(~type(0)) >> 1));
   static constexpr type WAITER = 1;
 
@@ -49,15 +52,15 @@ private:
     assert(lk & HOLDER);
     return lk != HOLDER + WAITER;
   }
-#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
+#if defined __linux__ || (!defined _WIN32 && __cplusplus < 202002L)
   void notify_one() noexcept;
   inline void wait(T old) const noexcept;
-  /** Notify waiters after unlock_impl() returned true */
-  void unlock_notify() noexcept { this->notify_one(); }
 #else
-  /** Notify waiters after unlock_impl() returned true */
-  void unlock_notify() noexcept { m.notify_one(); }
+  void notify_one() noexcept { m.notify_one(); }
+  void wait(T old) const noexcept { m.wait(old) };
 #endif
+  /** Notify waiters after unlock_impl() returned true */
+  void unlock_notify() noexcept { notify_one(); }
 };
 
 /** Tiny, non-recursive mutex that keeps a count of waiters.
@@ -68,7 +71,7 @@ The counterpart of get_storage() is std::mutex::native_handle().
 We define spin_lock(), which is like lock(), but with an initial spinloop.
 
 The implementation counts pending lock() requests, so that unlock()
-will only invoke notify_one() when pending requests exist. */
+will only invoke signal() when pending requests exist. */
 template<typename Storage = mutex_storage<>>
 class atomic_mutex
 {

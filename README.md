@@ -74,8 +74,7 @@ This is based on my implementation of InnoDB rw-locks in
 [MariaDB Server](https://github.com/MariaDB/server/) 10.6.
 The main motivation of publishing this separately is:
 * To help compiler writers implement `wait()` and `notify_one()`.
-* To eventually include kind of synchronization primitives in
-a future version of the C++ standard library.
+* To experiment with implementation details of synchronization primitives.
 * To provide space efficient synchronization primitives, for example
 to implement a hash table with one mutex per cache line
 (such as the `lock_sys_t::hash_table` in MariaDB Server 10.6).
