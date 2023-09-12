@@ -40,7 +40,7 @@ cd build
 cmake -DWITH_SPINLOOP=ON ..
 cmake --build .
 test/test_atomic_sync
-test/test/atomic_condition
+test/test_atomic_condition
 test/test_mutex 4 10000
 test/test_native_mutex 4 10000
 # Microsoft Windows:
