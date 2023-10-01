@@ -126,6 +126,73 @@ assembler code or a MSVC intrinsic function.
     goto label;
 #endif
 
+#ifdef __linux__
+template<typename T>
+void mutex_storage<T>::lock_wait() noexcept
+{
+  uint64_t old_lk = m_and_node.load(std::memory_order_relaxed);
+  constexpr uint64_t first_holder_waiter = HOLDER | WAITER | ~0ULL << 32;
+  uint64_t waiter = WAITER;
+  for (;;) {
+    assert(T(old_lk) || waiter);
+    uint64_t lk = T(old_lk) ? (old_lk + waiter) | HOLDER : first_holder_waiter;
+    if (!m_and_node.compare_exchange_strong(old_lk, lk,
+                                            std::memory_order_acquire,
+                                            std::memory_order_relaxed));
+    else if (!(old_lk & HOLDER))
+      return;
+    else {
+      wait(T(lk));
+      waiter = 0;
+    }
+  }
+}
+
+template<typename T>
+void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
+{
+  uint64_t old_lk = m_and_node.load(std::memory_order_relaxed);
+  constexpr uint64_t first_holder_waiter = HOLDER | WAITER | ~0ULL << 32;
+  uint64_t waiter = WAITER;
+
+  /* We hope to avoid system calls when the conflict is resolved quickly. */
+  for (auto spin = spin_rounds;;) {
+    assert(T(old_lk) || waiter);
+    uint64_t lk = T(old_lk) ? (old_lk + waiter) | HOLDER : first_holder_waiter;
+    if (!m_and_node.compare_exchange_strong(old_lk, lk,
+                                            std::memory_order_acquire,
+                                            std::memory_order_relaxed));
+    else if (!(old_lk & HOLDER))
+      return;
+    else {
+      waiter = 0;
+# ifdef _WIN32
+      YieldProcessor();
+# elif defined __GNUC__ && defined _ARCH_PWR8
+      __builtin_ppc_get_timebase();
+# elif defined __GNUC__ && defined __i386__ || defined __x86_64__
+      __asm__ __volatile__ ("pause");
+# endif
+    }
+    if (!--spin)
+      break;
+  }
+
+  for (;;) {
+    assert(T(old_lk) || waiter);
+    uint64_t lk = T(old_lk) ? (old_lk + waiter) | HOLDER : first_holder_waiter;
+    if (!m_and_node.compare_exchange_strong(old_lk, lk,
+                                            std::memory_order_acquire,
+                                            std::memory_order_relaxed));
+    else if (!(old_lk & HOLDER))
+      return;
+    else {
+      wait(T(lk));
+      waiter = 0;
+    }
+  }
+}
+#else
 template<typename T>
 void mutex_storage<T>::lock_wait() noexcept
 {
@@ -232,9 +299,7 @@ void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
     }
   }
 }
-
-template void mutex_storage<uint32_t>::lock_wait() noexcept;
-template void mutex_storage<uint32_t>::spin_lock_wait(unsigned) noexcept;
+#endif
 
 template<typename T>
 void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
@@ -246,7 +311,7 @@ void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
   {
     assert(lk > X);
 #ifdef __linux__
-    futex_wait(reinterpret_cast<const uint32_t*>(&inner), lk);
+    futex_wait(reinterpret_cast<const uint32_t*>(&inner), T(lk));
 #elif !defined _WIN32 && __cplusplus < 202002L
     FUTEX(WAIT, &inner, lk);
 #else
@@ -256,6 +321,9 @@ void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
   }
   while (lk != X);
 }
+
+template void mutex_storage<uint32_t>::lock_wait() noexcept;
+template void mutex_storage<uint32_t>::spin_lock_wait(unsigned) noexcept;
 
 template
 void shared_mutex_storage<uint32_t>::lock_inner_wait(uint32_t) noexcept;

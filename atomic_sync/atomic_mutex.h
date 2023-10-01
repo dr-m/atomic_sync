@@ -10,11 +10,12 @@ class mutex_storage
 {
   using type = T;
   // exposition only; see test_native_mutex for a possible alternative
-  std::atomic<type> m;
-# if defined __linux__
-  // for FUTEX2_NUMA
-  int node_id = -1;
+  union {
+#if defined __linux__
+    std::atomic<uint64_t> m_and_node; // FUTEX_NUMA2
 #endif
+    std::atomic<type> m;
+  };
   static constexpr type HOLDER = type(~(type(~type(0)) >> 1));
   static constexpr type WAITER = 1;
 
