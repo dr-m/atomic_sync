@@ -7,12 +7,7 @@ template<typename T = uint32_t>
 class shared_mutex_storage
 {
   // exposition only
-  union {
-#if defined __linux__
-    std::atomic<uint64_t> inner_and_node; // FUTEX_NUMA2
-#endif
-    std::atomic<T> inner;
-  };
+  std::atomic<T> inner;
   atomic_mutex<mutex_storage<T>> outer;
   using type = T;
   static constexpr type X = type(~(type(~type(0)) >> 1));
@@ -59,23 +54,14 @@ private:
   @retval 0 if the exclusive lock was granted */
   type lock_inner() noexcept
   {
-#ifdef __linux__
-    uint64_t lk = inner_and_node.load(std::memory_order_relaxed);
-    assert(!(lk & X));
-    while (!inner_and_node.compare_exchange_weak(lk, T(lk)
-                                                 ? X | lk : X | ~0ULL << 32,
-                                                 std::memory_order_acquire,
-                                                 std::memory_order_relaxed));
-    return type(lk);
-#elif defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
     /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
     as a loop around LOCK CMPXCHG. In this particular case, toggling the
     most significant bit using fetch_add() is equivalent, and is
     translated into a simple LOCK XADD. */
     return inner.fetch_add(X, std::memory_order_acquire);
-#else
-    return inner.fetch_or(X, std::memory_order_acquire);
 #endif
+    return inner.fetch_or(X, std::memory_order_acquire);
   }
 
   /** Wait for an exclusive lock to be granted (any S locks to be released)
@@ -89,7 +75,7 @@ private:
     inner.store(0, std::memory_order_release);
   }
 
-#if defined __linux__ || (!defined _WIN32 && __cplusplus < 202002L)
+#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
   void shared_unlock_inner_notify() noexcept;
 #else
   /** Notify waiters after shared_unlock_inner() returned true */

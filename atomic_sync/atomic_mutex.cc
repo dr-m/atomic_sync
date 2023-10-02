@@ -301,6 +301,9 @@ void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
 }
 #endif
 
+template void mutex_storage<uint32_t>::lock_wait() noexcept;
+template void mutex_storage<uint32_t>::spin_lock_wait(unsigned) noexcept;
+
 template<typename T>
 void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
 {
@@ -310,9 +313,7 @@ void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
   do
   {
     assert(lk > X);
-#ifdef __linux__
-    futex_wait(reinterpret_cast<const uint32_t*>(&inner), T(lk));
-#elif !defined _WIN32 && __cplusplus < 202002L
+#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
     FUTEX(WAIT, &inner, lk);
 #else
     inner.wait(lk);
@@ -322,22 +323,13 @@ void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
   while (lk != X);
 }
 
-template void mutex_storage<uint32_t>::lock_wait() noexcept;
-template void mutex_storage<uint32_t>::spin_lock_wait(unsigned) noexcept;
-
 template
 void shared_mutex_storage<uint32_t>::lock_inner_wait(uint32_t) noexcept;
 
-#if defined __linux__ || (!defined _WIN32 && __cplusplus < 202002L)
+#if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
 template<typename T>
 void shared_mutex_storage<T>::shared_unlock_inner_notify() noexcept
-{
-#ifdef __linux__
-  futex_wake(reinterpret_cast<const uint32_t*>(&inner));
-#else
-  FUTEX(WAKE, &inner, 1);
-#endif
-}
+{FUTEX(WAKE, &inner, 1);}
 template
 void shared_mutex_storage<uint32_t>::shared_unlock_inner_notify() noexcept;
 #endif
