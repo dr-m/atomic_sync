@@ -119,18 +119,43 @@ void mutex_storage<T>::lock_wait() noexcept
 # include <windows.h>
 #endif
 
+#ifdef __GNUC__
+__attribute__((noinline))
+#elif defined _MSC_VER
+__declspec(noinline)
+#endif
+
+/** Back off from the memory bus for a while. */
+static void spin_pause()
+{
+  /* Note: the optimal value may be ISA implementation dependent. */
+  for (int rounds = 5; rounds--; )
+  {
+#ifdef _WIN32
+    YieldProcessor();
+#elif defined __GNUC__
+# ifdef _ARCH_PWR8
+    __builtin_ppc_get_timebase();
+# elif defined __i386__ || defined __x86_64__
+    __asm__ __volatile__ ("pause");
+# else
+    __asm__ __volatile__ ("":::"memory");
+# endif
+#endif
+  }
+}
+
 template<typename T>
 void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
 {
   T lk = WAITER + m.fetch_add(WAITER, std::memory_order_relaxed);
 
   /* We hope to avoid system calls when the conflict is resolved quickly. */
-  for (auto spin = spin_rounds;;)
+  for (auto spin = spin_rounds;; spin_pause())
   {
     assert(~HOLDER & lk);
-    if (lk & HOLDER)
-      lk = m.load(std::memory_order_relaxed);
-    else
+    lk = m.load(std::memory_order_relaxed);
+    if (!(lk & HOLDER))
     {
 #ifdef IF_NOT_FETCH_OR_GOTO
       static_assert(HOLDER == (1U << 31), "compatibility");
@@ -140,13 +165,6 @@ void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
       if (!((lk = m.fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
         goto acquired;
 #endif
-# ifdef _WIN32
-      YieldProcessor();
-# elif defined __GNUC__ && defined _ARCH_PWR8
-      __builtin_ppc_get_timebase();
-# elif defined __GNUC__ && defined __i386__ || defined __x86_64__
-      __asm__ __volatile__ ("pause");
-# endif
     }
     if (!--spin)
       break;
@@ -209,6 +227,40 @@ void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
 
 template
 void shared_mutex_storage<uint32_t>::lock_inner_wait(uint32_t) noexcept;
+
+template<typename T>
+void shared_mutex_storage<T>::shared_lock_wait() noexcept
+{
+  lock_outer();
+#ifndef NDEBUG
+  type lk =
+#endif
+    inner.fetch_add(WAITER, std::memory_order_acquire);
+  unlock_outer();
+  assert(!(lk & X));
+}
+
+template
+void shared_mutex_storage<uint32_t>::shared_lock_wait() noexcept;
+
+template<typename T>
+void shared_mutex_storage<T>::spin_shared_lock_wait(unsigned spin_rounds)
+  noexcept
+{
+  /* We hope to avoid system calls when the conflict is resolved quickly. */
+  for (auto spin = spin_rounds;; spin_pause())
+  {
+    if (shared_lock_inner())
+      return;
+    if (--spin)
+      break;
+  }
+
+  shared_lock_wait();
+}
+
+template
+void shared_mutex_storage<uint32_t>::spin_shared_lock_wait(unsigned) noexcept;
 
 #if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
 template<typename T>

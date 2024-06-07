@@ -28,6 +28,13 @@ private:
   { outer.spin_lock(spin_rounds); }
   void unlock_outer() noexcept { outer.unlock(); }
 
+  /** Wait for a shared lock to be granted (any X lock to be released) */
+  void shared_lock_wait() noexcept;
+
+  /** Wait for a shared lock to be granted (any X lock to be released),
+  with initial spinloop. */
+  void spin_shared_lock_wait(unsigned spin_rounds) noexcept;
+
   /** Try to acquire a shared mutex
   @return whether the shared mutex was acquired */
   bool shared_lock_inner() noexcept
@@ -125,27 +132,6 @@ class atomic_shared_mutex
 {
   Storage storage;
 
-  /** Wait for a shared lock to be granted (any X lock to be released) */
-  void shared_lock_wait() noexcept
-  {
-    bool acquired;
-    do {
-      storage.lock_outer();
-      acquired = storage.shared_lock_inner();
-      storage.unlock_outer();
-    } while (!acquired);
-  }
-  /** Wait for a shared lock to be granted (any X lock to be released),
-  with initial spinloop. */
-  void spin_shared_lock_wait(unsigned spin_rounds) noexcept
-  {
-    storage.spin_lock_outer(spin_rounds);
-    bool acquired = storage.shared_lock_inner();
-    storage.unlock_outer();
-    if (!acquired)
-      shared_lock_wait();
-  }
-
   /** Acquire an exclusive lock while holding lock_outer() */
   void lock_inner() noexcept
   {
@@ -217,14 +203,14 @@ public:
   {
     __tsan_mutex_pre_lock(&storage, __tsan_mutex_read_lock);
     if (!storage.shared_lock_inner())
-      shared_lock_wait();
+      storage.shared_lock_wait();
     __tsan_mutex_post_lock(&storage, __tsan_mutex_read_lock, 0);
   }
   void spin_lock_shared(unsigned spin_rounds) noexcept
   {
     __tsan_mutex_pre_lock(&storage, __tsan_mutex_read_lock);
     if (!storage.shared_lock_inner())
-      spin_shared_lock_wait(spin_rounds);
+      storage.spin_shared_lock_wait(spin_rounds);
     __tsan_mutex_post_lock(&storage, __tsan_mutex_read_lock, 0);
   }
   void spin_lock_shared() noexcept

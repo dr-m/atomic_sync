@@ -231,7 +231,7 @@ as follows:
 ```sh
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-13 ..
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-18 ..
 cmake --build .
 time test/test_atomic_sync
 time numactl --cpunodebind 1 --localalloc test/test_atomic_sync
@@ -242,13 +242,13 @@ The smallest difference between plain and `numactl` that I achieved
 at one point was with `-DSPINLOOP=50` (which is the default).
 For more stable times, I temporarily changed the
 value of `N_ROUNDS` to 500 in the source code. The durations below are
-the fastest of several attempts with clang++-13 and `N_ROUNDS = 100`.
+the fastest of several attempts with `clang++-18` and `N_ROUNDS = 100`.
 | build                 | invocation | real   | user    | system  |
 | --------------------- | ---------- | -----: | ------: | ------: |
-| `-DWITH_SPINLOOP=OFF` | plain      | 1.763s | 40.973s |  5.382s |
-| `-DWITH_SPINLOOP=OFF` | `numactl`  | 1.169s | 15.563s |  4.060s |
-| `-DWITH_SPINLOOP=ON`  | plain      | 1.798s | 42.000s |  5.191s |
-| `-DWITH_SPINLOOP=ON`  | `numactl`  | 1.168s | 15.810s |  4.089s |
+| `-DWITH_SPINLOOP=OFF` | plain      | 1.692s | 34.020s | 12.217s |
+| `-DWITH_SPINLOOP=OFF` | `numactl`  | 1.068s | 12.150s |  6.886s |
+| `-DWITH_SPINLOOP=ON`  | plain      | 1.494s | 33.295s |  8.209s |
+| `-DWITH_SPINLOOP=ON`  | `numactl`  | 1.019s | 12.283s |  5.828s |
 
 The execution times without `numactl` vary a lot; a much longer run
 (with a larger value of `N_ROUNDS`) is advisable for performance tests.
@@ -269,10 +269,4 @@ the output of a `CMAKE_BUILD_TYPE=RelWithDebInfo` build that was
 invoked as `test_mutex 4 100000` might look something like this:
 ```
 atomic_mutex: 0.036838s, atomic_spin_mutex: 0.059827s, mutex: 0.073922s
-```
-On a Raspberry Pi 2 (4 execution cores that implement the ARMv7 ISA),
-the output of `test_mutex 8 100000` nicely illustrates the usefulness of
-spinloops:
-```
-atomic_mutex: 0.411457s, atomic_spin_mutex: 0.218578s, mutex: 0.435057s
 ```
