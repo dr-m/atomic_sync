@@ -81,41 +81,6 @@ private:
   /** Notify waiters after shared_unlock_inner() returned true */
   void shared_unlock_inner_notify() noexcept { inner.notify_one(); }
 #endif
-
-  /** For atomic_shared_mutex::update_lock() */
-  void update_lock_inner() noexcept
-  {
-    assert(outer.get_storage().is_locked());
-#ifndef NDEBUG
-    type lk =
-#endif
-      inner.fetch_add(WAITER, std::memory_order_acquire);
-    assert(lk < X - WAITER);
-  }
-  /** For atomic_shared_mutex::update_lock_upgrade() */
-  type update_lock_upgrade_inner() noexcept
-  {
-    assert(outer.get_storage().is_locked());
-    return inner.fetch_add(X - WAITER, std::memory_order_acquire) - WAITER;
-  }
-  /** For atomic_shared_mutex::update_lock_downgrade() */
-  void update_lock_downgrade_inner() noexcept
-  {
-    assert(outer.get_storage().is_locked());
-    assert(this->is_locked());
-    inner.store(WAITER, std::memory_order_release);
-  }
-  /** For atomic_shared_mutex::unlock_update() */
-  void update_unlock_inner() noexcept
-  {
-    assert(outer.get_storage().is_locked());
-#ifndef NDEBUG
-    type lk =
-#endif
-      inner.fetch_sub(WAITER, std::memory_order_release);
-    assert(lk);
-    assert(lk < X);
-  }
 };
 
 /** Slim Shared/Update/Exclusive lock without recursion (re-entrancy).
@@ -179,14 +144,6 @@ class atomic_shared_mutex
     storage.unlock_outer();
     if (!acquired)
       shared_lock_wait();
-  }
-
-  /** Increment the shared lock count while holding the mutex */
-  void shared_acquire() noexcept
-  {
-    __tsan_mutex_pre_lock(&storage, __tsan_mutex_read_lock);
-    storage.update_lock_inner();
-    __tsan_mutex_post_lock(&storage, __tsan_mutex_read_lock, 0);
   }
 
   /** Acquire an exclusive lock while holding lock_outer() */
@@ -274,9 +231,9 @@ public:
   { return spin_lock_shared(storage.default_spin_rounds()); }
 
   /** Acquire an update lock (which can coexist with S locks). */
-  void lock_update() noexcept { storage.lock_outer(); shared_acquire(); }
+  void lock_update() noexcept { storage.lock_outer(); }
   void spin_lock_update(unsigned spin_rounds) noexcept
-  { storage.spin_lock_outer(spin_rounds); shared_acquire(); }
+  { storage.spin_lock_outer(spin_rounds); }
   void spin_lock_update() noexcept
   { return spin_lock_update(storage.default_spin_rounds()); }
 
@@ -292,7 +249,7 @@ public:
   {
     __tsan_mutex_pre_unlock(&storage, __tsan_mutex_read_lock);
     __tsan_mutex_pre_lock(&storage, 0);
-    auto lk = storage.update_lock_upgrade_inner();
+    auto lk = storage.lock_inner();
     __tsan_mutex_post_unlock(&storage, __tsan_mutex_read_lock);
     if (lk)
       storage.lock_inner_wait(lk);
@@ -303,7 +260,7 @@ public:
   {
     __tsan_mutex_pre_unlock(&storage, 0);
     __tsan_mutex_pre_lock(&storage, __tsan_mutex_read_lock);
-    storage.update_lock_downgrade_inner();
+    storage.unlock_inner();
     __tsan_mutex_post_unlock(&storage, 0);
     __tsan_mutex_post_lock(&storage, __tsan_mutex_read_lock, 0);
     /* Note: Any pending lock_shared() will not be woken up until
@@ -327,9 +284,8 @@ public:
   void unlock_update() noexcept
   {
     __tsan_mutex_pre_unlock(&storage, __tsan_mutex_read_lock);
-    storage.update_unlock_inner();
-    __tsan_mutex_post_unlock(&storage, __tsan_mutex_read_lock);
     storage.unlock_outer();
+    __tsan_mutex_post_unlock(&storage, __tsan_mutex_read_lock);
   }
   /** Release an exclusive lock. */
   void unlock() noexcept

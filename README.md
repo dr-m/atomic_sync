@@ -137,7 +137,12 @@ acquires a lock on both the data members `outer` and `inner`.
 A `lock_shared()` operates on the `inner` lock. If the `mutex_storage`
 is write-locked, then `lock_shared()` will momentarily acquire and
 release `outer` in order to wait for `unlock()`. The third lock mode
-`lock_update()` locks `outer` and acquires a shared lock on `inner`.
+`lock_update()` only locks `outer` to ensure mutual exclusion with
+`lock()` and `lock_update()`, but not `lock_shared()`.
+Previously, when `lock_update()` was additionally essentially executing
+`lock_shared()` (unnecessarily accessing the `inner` component),
+the program `test_atomic_sync` did not report data races; now it does
+at least occasionally.
 
 For `atomic_shared_mutex`, the ThreadSanitizer instrumentation
 includes a flag `__tsan_mutex_try_read_lock` that is not available in
@@ -152,8 +157,8 @@ also been tested with GCC 11 `-fsanitize=thread`.
 
 The program `test_native_mutex` demonstrates how a user-defined
 `mutex_storage` (based on POSIX `pthread_mutex_t` or Microsoft Windows
-`SRWLOCK`) can be used with `atomic_mutex`. That program may report
-bogus ThreadSanitizer data race warnings when built for
+`SRWLOCK`) can be used with `atomic_mutex`. That program would report
+bogus ThreadSanitizer data race warnings when built with GCC 12 or later for
 GNU/Linux, presumably because the built-in instrumentation for
 `pthread_mutex_t` interferes with the additional instrumentation in
 `atomic_mutex`.
