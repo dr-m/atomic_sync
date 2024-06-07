@@ -144,14 +144,16 @@ includes a flag `__tsan_mutex_try_read_lock` that is not available in
 GCC 11.
 
 The instrumentation depends on some features that are not available in
-C++11. It has been tested with clang++-14, clang++-15, and GCC 12. The
-program `test_mutex`, which does not use `atomic_shared_mutex`, has
-been tested with GCC 11 `-fsanitize=thread`.
+C++11. It has been tested with clang++-14 through clang++-18, and
+GCC 12, 13.2, 14.1.
+
+The program `test_mutex`, which does not use `atomic_shared_mutex`, has
+also been tested with GCC 11 `-fsanitize=thread`.
 
 The program `test_native_mutex` demonstrates how a user-defined
 `mutex_storage` (based on POSIX `pthread_mutex_t` or Microsoft Windows
-`SRWLOCK`) can be used with `atomic_mutex`. That program will report
-bogus ThreadSanitizer data race warnings when built with GCC 12 for
+`SRWLOCK`) can be used with `atomic_mutex`. That program may report
+bogus ThreadSanitizer data race warnings when built for
 GNU/Linux, presumably because the built-in instrumentation for
 `pthread_mutex_t` interferes with the additional instrumentation in
 `atomic_mutex`.

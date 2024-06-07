@@ -75,9 +75,9 @@ class atomic_mutex
   Storage storage;
 public:
 #ifdef __SANITIZE_THREAD__
-  constexpr atomic_mutex()
+  atomic_mutex()
   { __tsan_mutex_create(&storage, __tsan_mutex_linker_init); }
-  constexpr ~atomic_mutex()
+  ~atomic_mutex()
   { __tsan_mutex_destroy(&storage, __tsan_mutex_linker_init); }
 #else
   /** Default constructor */
