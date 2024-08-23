@@ -23,6 +23,7 @@ private:
   /** @return default argument for spin_lock_outer() */
   static unsigned default_spin_rounds();
 
+  bool try_lock_outer() noexcept { return outer.try_lock(); }
   void lock_outer() noexcept { outer.lock(); }
   void spin_lock_outer(unsigned spin_rounds) noexcept
   { outer.spin_lock(spin_rounds); }
@@ -229,6 +230,18 @@ public:
   { storage.spin_lock_outer(spin_rounds); lock_inner(); }
   void spin_lock() noexcept
   { return spin_lock(storage.default_spin_rounds()); }
+
+  /** Try to upgrade a shared lock to update.
+  @return whether the upgrade succeeded */
+  bool shared_lock_upgrade_try() noexcept
+  {
+    if (!storage.try_lock_outer())
+      return false;
+    unlock_shared();
+    return true;
+  }
+  /** Downgrade an update lock to shared. */
+  void shared_lock_downgrade() noexcept { lock_shared(); unlock_update(); }
 
   /** Upgrade an update lock to exclusive. */
   void update_lock_upgrade() noexcept

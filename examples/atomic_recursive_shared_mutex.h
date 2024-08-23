@@ -255,6 +255,28 @@ public:
   /** Acquire a recursive update lock */
   void lock_update_recursive() noexcept { writer_recurse<true>(); }
 
+  /** Try to upgrade a shared lock to update
+  @return whether the operation succeeded */
+  bool shared_lock_upgrade_try() noexcept
+  {
+    assert(!holding_lock_update_or_lock());
+    if (!super::shared_lock_upgrade_try())
+      return false;
+    set_holder();
+    recursive= RECURSIVE_U;
+    return true;
+  }
+
+  /** Downgrade a single update lock to a shared */
+  void shared_lock_downgrade() noexcept
+  {
+    assert(holding_lock_update());
+    assert(recursive == RECURSIVE_U);
+    recursive= 0;
+    set_holder(std::thread::id{});
+    super::shared_lock_downgrade();
+  }
+
   /** Upgrade an update lock to exclusive */
   void update_lock_upgrade() noexcept
   {

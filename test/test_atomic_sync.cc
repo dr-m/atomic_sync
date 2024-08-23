@@ -91,6 +91,17 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
     {
       transactional_shared_lock_guard<typeof sux> g{sux};
       transactional_assert(!critical);
+      if (!g.was_elided() && sux.shared_lock_upgrade_try())
+      {
+        assert(!critical);
+        sux.update_lock_upgrade();
+        assert(!critical);
+        critical = true;
+        critical = false;
+        sux.update_lock_downgrade();
+        sux.shared_lock_downgrade();
+        assert(!critical);
+      }
     }
 
     for (auto j = M_ROUNDS; j--; )
@@ -134,6 +145,15 @@ static void test_recursive_shared_mutex()
     for (auto j = M_ROUNDS; j--; )
     {
       recursive_sux.lock_shared();
+      if (recursive_sux.shared_lock_upgrade_try())
+      {
+        recursive_sux.update_lock_upgrade();
+        assert(!critical);
+        critical = true;
+        critical = false;
+        recursive_sux.update_lock_downgrade();
+        recursive_sux.shared_lock_downgrade();
+      }
       assert(!critical);
       recursive_sux.unlock_shared();
     }
