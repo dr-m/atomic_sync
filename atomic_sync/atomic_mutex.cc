@@ -35,39 +35,8 @@ inline void mutex_storage<uint32_t>::wait(uint32_t old) const noexcept
 {FUTEX(WAIT, &m, old);}
 #endif
 
-/*
-
-Unfortunately, compilers targeting IA-32 or AMD64 currently cannot
-translate the following single-bit operations into Intel 80386 instructions:
-
-     m.fetch_or(1<<b) & 1<<b       LOCK BTS b, m
-     m.fetch_and(~(1<<b)) & 1<<b   LOCK BTR b, m
-     m.fetch_xor(1<<b) & 1<<b      LOCK BTC b, m
-
-In g++-12 and clang++-15 this actually works, except for b==31:
-https://gcc.gnu.org/bugzilla/show_bug.cgi?id=102566
-https://github.com/llvm/llvm-project/issues/37322
-
-Hence, we will manually translate fetch_or() using GCC-style inline
-assembler code or a MSVC intrinsic function.
-
-*/
-#if defined __clang_major__ && __clang_major__ < 10
-/* Only clang-10 introduced support for asm goto */
-#elif defined __GNUC__ && (defined __i386__ || defined __x86_64__)
-# define IF_FETCH_OR_GOTO(mem, bit, label)				\
-  __asm__ goto("lock btsl $" #bit ", %0\n\t"				\
-               "jc %l1" : : "m" (mem) : "cc", "memory" : label);
-# define IF_NOT_FETCH_OR_GOTO(mem, bit, label)				\
-  __asm__ goto("lock btsl $" #bit ", %0\n\t"				\
-               "jnc %l1" : : "m" (mem) : "cc", "memory" : label);
-#elif defined _MSC_VER && (defined _M_IX86 || defined _M_IX64)
-# define IF_FETCH_OR_GOTO(mem, bit, label)				\
-  if (_interlockedbittestandset(reinterpret_cast<volatile long*>(&mem), bit)) \
-    goto label;
-# define IF_NOT_FETCH_OR_GOTO(mem, bit, label)				\
-  if (!_interlockedbittestandset(reinterpret_cast<volatile long*>(&mem), bit))\
-    goto label;
+#ifdef _WIN32
+# include <windows.h>
 #endif
 
 template<typename T>
@@ -83,17 +52,19 @@ void mutex_storage<T>::lock_wait() noexcept
 #else
       m.wait(lk);
 #endif
-#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
     reload:
 #endif
       lk = m.load(std::memory_order_relaxed);
     }
-#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
     else
     {
-# ifdef IF_FETCH_OR_GOTO
-      static_assert(HOLDER == (1U << 31), "compatibility");
-      IF_FETCH_OR_GOTO(*this, 31, reload);
+# ifdef _MSC_VER
+      static_assert(HOLDER == (1U << 0), "compatibility");
+      if (_interlockedbittestandset
+          (reinterpret_cast<volatile long*>(this), 0))
+        goto reload;
 # else
       if (m.fetch_or(HOLDER, std::memory_order_relaxed) & HOLDER)
         goto reload;
@@ -114,10 +85,6 @@ void mutex_storage<T>::lock_wait() noexcept
 #endif
   }
 }
-
-#ifdef _WIN32
-# include <windows.h>
-#endif
 
 #ifdef __GNUC__
 __attribute__((noinline))
@@ -157,10 +124,16 @@ void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
     lk = m.load(std::memory_order_relaxed);
     if (!(lk & HOLDER))
     {
-#ifdef IF_NOT_FETCH_OR_GOTO
-      static_assert(HOLDER == (1U << 31), "compatibility");
-      IF_NOT_FETCH_OR_GOTO(*this, 31, acquired);
-      lk|= HOLDER;
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
+      lk += HOLDER;
+# ifdef _MSC_VER
+      static_assert(HOLDER == (1U << 0), "compatibility");
+      if (!_interlockedbittestandset
+          (reinterpret_cast<volatile long*>(this), 0))
+# else
+      if (!(m.fetch_or(HOLDER, std::memory_order_relaxed) & HOLDER))
+# endif
+        goto acquired;
 #else
       if (!((lk = m.fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER))
         goto acquired;
@@ -180,16 +153,22 @@ void mutex_storage<T>::spin_lock_wait(unsigned spin_rounds) noexcept
 #else
       m.wait(lk);
 #endif
-#ifdef IF_FETCH_OR_GOTO
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
     reload:
 #endif
       lk = m.load(std::memory_order_relaxed);
     }
     else
     {
-#ifdef IF_FETCH_OR_GOTO
-      static_assert(HOLDER == (1U << 31), "compatibility");
-      IF_FETCH_OR_GOTO(*this, 31, reload);
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
+# ifdef _MSC_VER
+      static_assert(HOLDER == (1U << 0), "compatibility");
+      if (_interlockedbittestandset
+          (reinterpret_cast<volatile long*>(this), 0))
+# else
+      if (m.fetch_or(HOLDER, std::memory_order_relaxed) & HOLDER)
+# endif
+        goto reload;
 #else
       if ((lk = m.fetch_or(HOLDER, std::memory_order_relaxed)) & HOLDER)
         continue;
@@ -209,12 +188,12 @@ template void mutex_storage<uint32_t>::spin_lock_wait(unsigned) noexcept;
 template<typename T>
 void shared_mutex_storage<T>::lock_inner_wait(T lk) noexcept
 {
-  assert(lk < X);
+  assert(!(lk & X));
   lk |= X;
 
   do
   {
-    assert(lk > X);
+    assert(lk & X);
 #if !defined _WIN32 && __cplusplus < 202002L /* Emulate the C++20 primitives */
     FUTEX(WAIT, &inner, lk);
 #else

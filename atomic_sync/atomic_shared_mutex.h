@@ -62,11 +62,16 @@ private:
   @retval 0 if the exclusive lock was granted */
   type lock_inner() noexcept
   {
-#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
-    /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
-    as a loop around LOCK CMPXCHG. In this particular case, toggling the
-    most significant bit using fetch_add() is equivalent, and is
-    translated into a simple LOCK XADD. */
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
+    static_assert(X == 1U << 31, "compatibility");
+    /* On IA-32 and AMD64, a fetch_XXX() that needs to return the
+    previous value of the word state can only be implemented
+    efficiently for fetch_add() or fetch_sub(), both of which
+    translate into a 80486 LOCK XADD instruction.  Anything else would
+    translate into a loop around LOCK CMPXCHG.  In this particular
+    case, we know that the bit was previously clear, and therefore
+    setting (actually toggling) the most significant bit using
+    fetch_add() or fetch_sub() is equivalent. */
     return inner.fetch_add(X, std::memory_order_acquire);
 #endif
     return inner.fetch_or(X, std::memory_order_acquire);

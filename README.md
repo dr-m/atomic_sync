@@ -163,6 +163,35 @@ GNU/Linux, presumably because the built-in instrumentation for
 `pthread_mutex_t` interferes with the additional instrumentation in
 `atomic_mutex`.
 
+### Target limitations around atomic operations
+
+Some instruction set architectures (ISA) seriously limit the choice of
+atomic operations that may be executed efficiently.  On the commonly
+used IA-32 or x86-64 ISA, compilers may fall back to the generic case
+of generating a loop around a compare-and-swap (`lock cmpxchg`).
+
+On x86, the most straightforward read-modify-write operations are
+`std::atomic::fetch_add()` or `std::atomic::fetch_sub()`, both of
+which translate into the 80486 `lock xadd` instruction.
+
+Depending on the compiler, some single-bit versions of `fetch_or()`,
+`fetch_and()` or `fetch_xor()` may be translated into the 80386
+instructions `lock bts`, `lock btr`, or `lock btc`.  This mostly works
+starting with GCC 7 or clang 15.  There are additional limitations
+regarding the most significant bit; these were lifted in GCC 13 but
+not clang (version 19 as of now).  The Microsoft compiler still
+requires its own intrinsics such as `_interlockedbittestandset()` to
+be used.
+
+On POWER and ARM, atomic operations traditionally translate into a
+loop around load-locked followed by store-conditional (LL/SC).  The
+ARMv8.1-a revision includes Large System Extensions (LSE) includes not
+only the `ldadd` instruction for `fetch_add()` and `fetch_sub()` but
+also corresponding instructions for `fetch_and()`, `fetch_xor()`,
+`fetch_or()`.  If you need to support multiple ARM ISA revisions, you
+may want to enable the compiler option `-moutline-atomics` so that the
+best option may be chosen at run time.
+
 ### Lock elision
 
 The `transactional_lock_guard` is like `std::lock_guard` but designed

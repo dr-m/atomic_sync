@@ -12,8 +12,8 @@ class mutex_storage
   // exposition only; see test_native_mutex for a possible alternative
   std::atomic<type> m;
 
-  static constexpr type HOLDER = type(~(type(~type(0)) >> 1));
-  static constexpr type WAITER = 1;
+  static constexpr type HOLDER = 1;
+  static constexpr type WAITER = 2;
 
 public:
   constexpr bool is_locked() const noexcept
