@@ -36,6 +36,7 @@ public:
   void unlock_notify() noexcept {}
 };
 #else
+# include <windows.h>
 # include <synchapi.h>
 
 class native_mutex_storage
