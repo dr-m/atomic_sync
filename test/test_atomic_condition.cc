@@ -11,13 +11,17 @@ static unsigned pending;
 constexpr unsigned N_THREADS = 30;
 constexpr unsigned N_ROUNDS = 100;
 
-static atomic_mutex<> m;
-static atomic_shared_mutex<> sux;
+// MSVC does not recognize typeof
+typedef atomic_mutex<> typeof_m;
+typedef atomic_shared_mutex<> typeof_sux;
+
+static typeof_m m;
+static typeof_sux sux;
 static atomic_condition_variable cv;
 
 TRANSACTIONAL_TARGET static void test_condition_variable()
 {
-  transactional_lock_guard<typeof m> g{m};
+  transactional_lock_guard<typeof_m> g{m};
   if (pending)
   {
     pending--;
@@ -37,7 +41,7 @@ static std::condition_variable_any cva;
 
 TRANSACTIONAL_TARGET static void test_condition_variable_any()
 {
-  transactional_lock_guard<typeof m> g{m};
+  transactional_lock_guard<typeof_m> g{m};
   if (pending)
   {
     pending--;
@@ -54,7 +58,7 @@ TRANSACTIONAL_TARGET static void test_condition_variable_any()
 
 TRANSACTIONAL_TARGET static void test_shared_condition_variable()
 {
-  transactional_shared_lock_guard<typeof sux> g{sux};
+  transactional_shared_lock_guard<typeof_sux> g{sux};
 #ifdef WITH_ELISION
   if (!pending && g.was_elided())
     xabort();
@@ -83,7 +87,7 @@ int main(int, char **)
       t[i] = std::thread(test_condition_variable);
     for (auto i = N_THREADS; i--; )
     {
-      transactional_lock_guard<typeof m> g{m};
+      transactional_lock_guard<typeof_m> g{m};
       pending++;
       if (cv.is_waiting())
         cv.signal();
@@ -102,7 +106,7 @@ int main(int, char **)
       t[i] = std::thread(test_condition_variable_any);
     for (auto i = N_THREADS; i--; )
     {
-      transactional_lock_guard<typeof m> g{m};
+      transactional_lock_guard<typeof_m> g{m};
       pending++;
       cva.notify_one();
     }
@@ -119,7 +123,7 @@ int main(int, char **)
       t[i] = std::thread(test_shared_condition_variable);
     bool is_waiting;
     {
-      transactional_lock_guard<typeof sux> g{sux};
+      transactional_lock_guard<typeof_sux> g{sux};
       pending = 1;
       is_waiting = cv.is_waiting();
     }

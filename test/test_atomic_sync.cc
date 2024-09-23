@@ -49,7 +49,9 @@ public:
 # define atomic_spin_shared_mutex atomic_shared_mutex
 # define atomic_spin_recursive_shared_mutex atomic_recursive_shared_mutex
 #endif
-static atomic_spin_mutex<> m;
+// MSVC does not recognize typeof
+typedef atomic_spin_mutex<> typeof_m;
+static typeof_m m;
 
 #if !defined WITH_ELISION || defined NDEBUG
 # define transactional_assert(x) assert(x)
@@ -61,7 +63,7 @@ TRANSACTIONAL_TARGET static void test_atomic_mutex()
 {
   for (auto i = N_ROUNDS * M_ROUNDS; i--; )
   {
-    transactional_lock_guard<typeof m> g{m};
+    transactional_lock_guard<typeof_m> g{m};
     transactional_assert(!critical);
     critical = true;
     critical = false;
@@ -74,14 +76,15 @@ abort:
 #endif
 }
 
-static atomic_spin_shared_mutex<> sux;
+typedef atomic_spin_shared_mutex<> typeof_sux;
+static typeof_sux sux;
 
 TRANSACTIONAL_TARGET static void test_shared_mutex()
 {
   for (auto i = N_ROUNDS; i--; )
   {
     {
-      transactional_lock_guard<typeof sux> g{sux};
+      transactional_lock_guard<typeof_sux> g{sux};
       transactional_assert(!critical);
       critical = true;
       critical = false;
@@ -89,7 +92,7 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
 
     for (auto j = M_ROUNDS; j--; )
     {
-      transactional_shared_lock_guard<typeof sux> g{sux};
+      transactional_shared_lock_guard<typeof_sux> g{sux};
       transactional_assert(!critical);
       if (!g.was_elided() && sux.shared_lock_upgrade_try())
       {
@@ -106,7 +109,7 @@ TRANSACTIONAL_TARGET static void test_shared_mutex()
 
     for (auto j = M_ROUNDS; j--; )
     {
-      transactional_update_lock_guard<typeof sux> g{sux};
+      transactional_update_lock_guard<typeof_sux> g{sux};
       transactional_assert(!critical);
       if (!g.was_elided())
         sux.update_lock_upgrade();
